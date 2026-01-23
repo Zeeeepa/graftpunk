@@ -20,9 +20,9 @@ import os
 
 from cryptography.fernet import Fernet
 
-from bsc.config import get_settings
-from bsc.exceptions import EncryptionError
-from bsc.logging import get_logger
+from graftpunk.config import get_settings
+from graftpunk.exceptions import EncryptionError
+from graftpunk.logging import get_logger
 
 LOG = get_logger(__name__)
 

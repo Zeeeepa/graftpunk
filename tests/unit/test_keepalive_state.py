@@ -2,7 +2,7 @@
 
 import pytest
 
-from bsc.keepalive.state import (
+from graftpunk.keepalive.state import (
     DaemonStatus,
     KeepaliveState,
     read_keepalive_state,
@@ -113,7 +113,7 @@ class TestKeepaliveStateIO:
         """Test writing and reading state file."""
         monkeypatch.setenv("BSC_CONFIG_DIR", str(tmp_path))
 
-        from bsc.config import reset_settings
+        from graftpunk.config import reset_settings
 
         reset_settings()
 
@@ -141,7 +141,7 @@ class TestKeepaliveStateIO:
         """Test reading non-existent state file returns None."""
         monkeypatch.setenv("BSC_CONFIG_DIR", str(tmp_path))
 
-        from bsc.config import reset_settings
+        from graftpunk.config import reset_settings
 
         reset_settings()
 
@@ -152,7 +152,7 @@ class TestKeepaliveStateIO:
         """Test reading invalid state file returns None."""
         monkeypatch.setenv("BSC_CONFIG_DIR", str(tmp_path))
 
-        from bsc.config import reset_settings
+        from graftpunk.config import reset_settings
 
         reset_settings()
 

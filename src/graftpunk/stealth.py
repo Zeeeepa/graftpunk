@@ -12,8 +12,8 @@ from pathlib import Path
 import undetected_chromedriver as uc
 from selenium_stealth import stealth
 
-from bsc.config import get_settings
-from bsc.logging import get_logger
+from graftpunk.config import get_settings
+from graftpunk.logging import get_logger
 
 LOG = get_logger(__name__)
 

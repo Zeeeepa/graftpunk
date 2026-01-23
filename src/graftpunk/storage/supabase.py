@@ -5,9 +5,9 @@ import time
 from datetime import UTC, datetime
 from typing import Any, cast
 
-from bsc.exceptions import SessionExpiredError, SessionNotFoundError, StorageError
-from bsc.logging import get_logger
-from bsc.storage.base import (
+from graftpunk.exceptions import SessionExpiredError, SessionNotFoundError, StorageError
+from graftpunk.logging import get_logger
+from graftpunk.storage.base import (
     SessionMetadata,
     parse_datetime_iso,
 )
@@ -238,7 +238,7 @@ class SupabaseSessionStorage:
                 if datetime.now(UTC) > expires_at:
                     LOG.warning("session_expired_ttl", name=name, expires_at=expires_at_str)
                     raise SessionExpiredError(
-                        f"Session '{name}' has expired (TTL). Please run 'bsc clear' and re-login."
+                        f"Session '{name}' has expired (TTL). Run 'gp clear' and re-login."
                     )
             except (ValueError, TypeError) as exc:
                 LOG.warning(

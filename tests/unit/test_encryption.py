@@ -3,13 +3,13 @@
 import pytest
 from cryptography.fernet import Fernet
 
-from bsc.encryption import (
+from graftpunk.encryption import (
     decrypt_data,
     encrypt_data,
     get_encryption_key,
     reset_encryption_key_cache,
 )
-from bsc.exceptions import EncryptionError
+from graftpunk.exceptions import EncryptionError
 
 
 class TestEncryption:
@@ -27,7 +27,7 @@ class TestEncryption:
         reset_encryption_key_cache()
 
         # Reset settings to pick up new config
-        from bsc.config import reset_settings
+        from graftpunk.config import reset_settings
 
         reset_settings()
 
@@ -48,7 +48,7 @@ class TestEncryption:
         monkeypatch.setenv("BSC_STORAGE_BACKEND", "local")
         reset_encryption_key_cache()
 
-        from bsc.config import reset_settings
+        from graftpunk.config import reset_settings
 
         reset_settings()
 
@@ -63,7 +63,7 @@ class TestEncryption:
         monkeypatch.setenv("BSC_STORAGE_BACKEND", "local")
         reset_encryption_key_cache()
 
-        from bsc.config import reset_settings
+        from graftpunk.config import reset_settings
 
         reset_settings()
 
@@ -79,7 +79,7 @@ class TestEncryption:
         monkeypatch.setenv("BSC_STORAGE_BACKEND", "local")
         reset_encryption_key_cache()
 
-        from bsc.config import reset_settings
+        from graftpunk.config import reset_settings
 
         reset_settings()
 
@@ -111,7 +111,7 @@ class TestEncryptionKeyFile:
         monkeypatch.setenv("BSC_STORAGE_BACKEND", "local")
         reset_encryption_key_cache()
 
-        from bsc.config import reset_settings
+        from graftpunk.config import reset_settings
 
         reset_settings()
 
@@ -133,7 +133,7 @@ class TestEncryptionKeyFile:
         monkeypatch.setenv("BSC_STORAGE_BACKEND", "local")
         reset_encryption_key_cache()
 
-        from bsc.config import reset_settings
+        from graftpunk.config import reset_settings
 
         reset_settings()
 

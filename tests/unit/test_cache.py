@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from bsc.cache import (
+from graftpunk.cache import (
     SessionLike,
     _extract_session_metadata,
     _reset_session_storage_backend,
@@ -17,7 +17,7 @@ from bsc.cache import (
     load_session_for_api,
     update_session_status,
 )
-from bsc.exceptions import SessionExpiredError, SessionNotFoundError
+from graftpunk.exceptions import SessionExpiredError, SessionNotFoundError
 
 
 class TestSessionLikeProtocol:
@@ -112,8 +112,8 @@ class TestCacheSession:
         monkeypatch.setenv("BSC_SESSION_TTL_HOURS", "24")
         _reset_session_storage_backend()
 
-        from bsc.config import reset_settings
-        from bsc.encryption import reset_encryption_key_cache
+        from graftpunk.config import reset_settings
+        from graftpunk.encryption import reset_encryption_key_cache
 
         reset_settings()
         reset_encryption_key_cache()
@@ -130,8 +130,8 @@ class TestCacheSession:
         monkeypatch.setenv("BSC_STORAGE_BACKEND", "local")
         _reset_session_storage_backend()
 
-        from bsc.config import reset_settings
-        from bsc.encryption import reset_encryption_key_cache
+        from graftpunk.config import reset_settings
+        from graftpunk.encryption import reset_encryption_key_cache
 
         reset_settings()
         reset_encryption_key_cache()
@@ -155,7 +155,7 @@ class TestLoadSession:
         monkeypatch.setenv("BSC_STORAGE_BACKEND", "local")
         _reset_session_storage_backend()
 
-        from bsc.config import reset_settings
+        from graftpunk.config import reset_settings
 
         reset_settings()
 
@@ -168,8 +168,8 @@ class TestLoadSession:
         monkeypatch.setenv("BSC_STORAGE_BACKEND", "local")
         _reset_session_storage_backend()
 
-        from bsc.config import reset_settings
-        from bsc.encryption import reset_encryption_key_cache
+        from graftpunk.config import reset_settings
+        from graftpunk.encryption import reset_encryption_key_cache
 
         reset_settings()
         reset_encryption_key_cache()
@@ -203,7 +203,7 @@ class TestLoadSession:
         # Create encrypted session file with different data
         import dill as pickle
 
-        from bsc.encryption import encrypt_data
+        from graftpunk.encryption import encrypt_data
 
         # Use a simple picklable session instead of MagicMock
         session = SimpleSession()
@@ -228,7 +228,7 @@ class TestLoadSessionForApi:
         monkeypatch.setenv("BSC_STORAGE_BACKEND", "local")
         _reset_session_storage_backend()
 
-        from bsc.config import reset_settings
+        from graftpunk.config import reset_settings
 
         reset_settings()
 
@@ -249,7 +249,7 @@ class TestListSessions:
         monkeypatch.setenv("BSC_STORAGE_BACKEND", "local")
         _reset_session_storage_backend()
 
-        from bsc.config import reset_settings
+        from graftpunk.config import reset_settings
 
         reset_settings()
 
@@ -270,7 +270,7 @@ class TestClearSessionCache:
         monkeypatch.setenv("BSC_STORAGE_BACKEND", "local")
         _reset_session_storage_backend()
 
-        from bsc.config import reset_settings
+        from graftpunk.config import reset_settings
 
         reset_settings()
 
@@ -291,7 +291,7 @@ class TestUpdateSessionStatus:
         monkeypatch.setenv("BSC_STORAGE_BACKEND", "local")
         _reset_session_storage_backend()
 
-        from bsc.config import reset_settings
+        from graftpunk.config import reset_settings
 
         reset_settings()
 
@@ -304,7 +304,7 @@ class TestUpdateSessionStatus:
         monkeypatch.setenv("BSC_STORAGE_BACKEND", "local")
         _reset_session_storage_backend()
 
-        from bsc.config import reset_settings
+        from graftpunk.config import reset_settings
 
         reset_settings()
 
@@ -325,7 +325,7 @@ class TestGetSessionMetadata:
         monkeypatch.setenv("BSC_STORAGE_BACKEND", "local")
         _reset_session_storage_backend()
 
-        from bsc.config import reset_settings
+        from graftpunk.config import reset_settings
 
         reset_settings()
 

@@ -16,9 +16,9 @@ import selenium.common.exceptions
 import slugify as slugify_lib
 import webdriver_manager.chrome
 
-from bsc.chrome import get_chrome_version
-from bsc.exceptions import BrowserError, ChromeDriverError
-from bsc.logging import get_logger
+from graftpunk.chrome import get_chrome_version
+from graftpunk.exceptions import BrowserError, ChromeDriverError
+from graftpunk.logging import get_logger
 
 LOG = get_logger(__name__)
 
@@ -53,7 +53,7 @@ class BrowserSession(requestium.Session):  # type: ignore[misc]
 
         if use_stealth:
             # Use stealth driver (undetected-chromedriver + selenium-stealth)
-            from bsc.stealth import create_stealth_driver
+            from graftpunk.stealth import create_stealth_driver
 
             LOG.info("creating_stealth_browser_session", headless=headless)
             try:
