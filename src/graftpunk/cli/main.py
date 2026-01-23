@@ -51,6 +51,7 @@ app = typer.Typer(
     """,
     no_args_is_help=True,
     rich_markup_mode="rich",
+    context_settings={"help_option_names": ["-h", "--help"]},
 )
 console = Console()
 
@@ -313,6 +314,7 @@ keepalive_app = typer.Typer(
     name="keepalive",
     help="Manage the session keepalive daemon.",
     no_args_is_help=True,
+    context_settings={"help_option_names": ["-h", "--help"]},
 )
 app.add_typer(keepalive_app)
 
