@@ -280,20 +280,32 @@ class TestPrepareSession:
         prepare_session(session, config, "https://example.com")
         assert session.headers["X-CSRF"] == "cached_value"
 
-    def test_re_extracts_expired_token(self) -> None:
+    def test_injects_expired_cached_token_without_extraction(self) -> None:
+        """Expired cached token is injected without triggering extraction (EAFP)."""
         session = requests.Session()
-        session.cookies.set("csrftoken", "fresh_value")
+        token = Token(name="X-CSRF", source="cookie", cookie_name="csrf")
+        config = TokenConfig(tokens=(token,))
 
-        # Pre-populate cache with expired token
-        cached = CachedToken(
-            name="X-CSRF",
-            value="old_value",
-            extracted_at=time.time() - 400,
-            ttl=300,
-        )
-        session._gp_cached_tokens = {"X-CSRF": cached}  # type: ignore[attr-defined]
+        # Pre-populate with expired cache
+        from graftpunk.tokens import _CACHE_ATTR
 
-        token = Token(name="X-CSRF", source="cookie", cookie_name="csrftoken")
+        expired_cache = {
+            "X-CSRF": CachedToken(name="X-CSRF", value="old_value", extracted_at=0, ttl=1)
+        }
+        setattr(session, _CACHE_ATTR, expired_cache)
+
+        # prepare_session should inject the expired value without calling extract_token
+        with patch("graftpunk.tokens.extract_token") as mock_extract:
+            prepare_session(session, config, "https://example.com")
+
+        mock_extract.assert_not_called()
+        assert session.headers["X-CSRF"] == "old_value"
+
+    def test_no_cache_still_extracts(self) -> None:
+        """Token with no cache at all still triggers extraction."""
+        session = requests.Session()
+        session.cookies.set("csrf", "fresh_value")
+        token = Token(name="X-CSRF", source="cookie", cookie_name="csrf")
         config = TokenConfig(tokens=(token,))
 
         prepare_session(session, config, "https://example.com")

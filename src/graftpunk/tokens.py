@@ -127,6 +127,59 @@ async def _extract_tokens_browser(
         _deregister_nodriver_browser(browser)
 
 
+async def extract_tokens_from_tab(
+    tab: Any,
+    tokens: list[Token],
+    base_url: str,
+) -> dict[str, str]:
+    """Extract tokens using an already-open browser tab.
+
+    Used during login to piggyback on the existing browser session
+    rather than launching a separate browser for token extraction.
+
+    Args:
+        tab: An open nodriver tab with authenticated session.
+        tokens: List of Token configs to extract (page-source tokens only).
+        base_url: Plugin's base URL for resolving relative page_url paths.
+
+    Returns:
+        Mapping of token name to extracted value.
+    """
+    by_url: dict[str, list[Token]] = defaultdict(list)
+    for token in tokens:
+        if token.source == "page" and token.pattern:
+            by_url[token.page_url].append(token)
+
+    results: dict[str, str] = {}
+    for page_url, token_group in by_url.items():
+        url = f"{base_url.rstrip('/')}{page_url}"
+        try:
+            tab = await tab.browser.get(url)
+            unmatched = list(token_group)
+            for _attempt in range(6):  # up to 3 seconds (6 × 0.5s)
+                await tab.sleep(0.5)
+                content = await tab.get_content()
+                still_unmatched = []
+                for token in unmatched:
+                    match = re.search(token.pattern, content)  # type: ignore[arg-type]
+                    if match:
+                        results[token.name] = match.group(1)
+                        LOG.info("login_token_extracted", name=token.name, url=url)
+                    else:
+                        still_unmatched.append(token)
+                unmatched = still_unmatched
+                if not unmatched:
+                    break
+        except Exception as exc:  # noqa: BLE001 — per-URL isolation; best-effort during login
+            LOG.warning("login_token_extraction_failed", url=url, error=str(exc))
+            continue
+
+        for token in unmatched:
+            LOG.warning("login_token_pattern_not_found", name=token.name, url=url)
+
+    return results
+
+
 @dataclass(frozen=True)
 class Token:
     """Configuration for extracting a dynamic token from a web page or session."""
@@ -393,8 +446,11 @@ def prepare_session(
     # Phase 1: Try non-browser extraction, collect browser-needed tokens
     for token in token_config.tokens:
         cached = cache.get(token.name)
-        if cached and not cached.is_expired:
+        if cached:
+            # EAFP: inject even if expired — 403 retry handles actual rejection
             session.headers[token.name] = cached.value
+            if cached.is_expired:
+                LOG.info("token_injecting_expired", name=token.name)
             continue
 
         try:

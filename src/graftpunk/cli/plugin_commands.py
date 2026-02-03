@@ -388,6 +388,7 @@ def _create_plugin_command(
 
                     clear_cached_tokens(session)
                     _prep(session, token_config, getattr(plugin, "base_url", ""))
+                    ctx._session_dirty = True
                     result = _execute_with_limits(cmd_spec.handler, ctx, cmd_spec, **kwargs)
                 else:
                     raise

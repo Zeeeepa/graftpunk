@@ -376,3 +376,66 @@ class TestPrepareSessionBrowserFallback:
             mock_browser.assert_not_called()
 
         assert session.headers["X-CSRF"] == "browser_val"
+
+
+class TestExtractTokensFromTab:
+    """Tests for extract_tokens_from_tab async function."""
+
+    @pytest.mark.asyncio
+    async def test_extracts_token_from_existing_tab(self) -> None:
+        """Extracts tokens using an already-open browser tab."""
+        from graftpunk.tokens import Token, extract_tokens_from_tab
+
+        token = Token(
+            name="X-CSRF",
+            source="page",
+            pattern=r'csrf = "([^"]+)"',
+            page_url="/dashboard",
+            extraction="browser",
+        )
+
+        mock_tab = _AwaitableMock()
+        mock_tab.get_content = AsyncMock(return_value='<html>var csrf = "tok123";</html>')
+        mock_browser = MagicMock()
+        mock_browser.get = AsyncMock(return_value=mock_tab)
+        mock_tab.browser = mock_browser
+
+        results = await extract_tokens_from_tab(mock_tab, [token], "https://example.com")
+        assert results == {"X-CSRF": "tok123"}
+
+    @pytest.mark.asyncio
+    async def test_no_browser_started(self) -> None:
+        """extract_tokens_from_tab does NOT start a new browser."""
+        from graftpunk.tokens import Token, extract_tokens_from_tab
+
+        token = Token(
+            name="X-CSRF",
+            source="page",
+            pattern=r'csrf = "([^"]+)"',
+            page_url="/",
+            extraction="browser",
+        )
+
+        mock_tab = _AwaitableMock()
+        mock_tab.get_content = AsyncMock(return_value='csrf = "v1";')
+        mock_browser = MagicMock()
+        mock_browser.get = AsyncMock(return_value=mock_tab)
+        mock_tab.browser = mock_browser
+
+        with patch("graftpunk.tokens.nodriver_start") as mock_start:
+            await extract_tokens_from_tab(mock_tab, [token], "https://example.com")
+
+        mock_start.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_skips_non_page_tokens(self) -> None:
+        """Cookie-source tokens are skipped (not page-extractable)."""
+        from graftpunk.tokens import Token, extract_tokens_from_tab
+
+        token = Token(name="X-Session", source="cookie", cookie_name="sid")
+
+        mock_tab = _AwaitableMock()
+        mock_tab.browser = MagicMock()
+
+        results = await extract_tokens_from_tab(mock_tab, [token], "https://example.com")
+        assert results == {}

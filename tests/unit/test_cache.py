@@ -816,3 +816,29 @@ class TestUpdateSessionCookies:
             patch("graftpunk.cache.cache_session", side_effect=OSError("disk full")),
         ):
             update_session_cookies(api_session, "testsession")  # Should not raise
+
+    def test_update_session_cookies_persists_token_cache(self) -> None:
+        """Token cache survives update_session_cookies round-trip."""
+        import requests
+
+        from graftpunk.tokens import _CACHE_ATTR, CachedToken
+
+        cached_session = MagicMock()
+        cached_session.cookies = requests.cookies.RequestsCookieJar()
+
+        api_session = requests.Session()
+        token_cache = {
+            "X-CSRF": CachedToken(name="X-CSRF", value="tok123", extracted_at=1000, ttl=300)
+        }
+        setattr(api_session, _CACHE_ATTR, token_cache)
+
+        with (
+            patch("graftpunk.cache.load_session", return_value=cached_session) as mock_load,
+            patch("graftpunk.cache.cache_session") as mock_cache,
+        ):
+            update_session_cookies(api_session, "testsession")
+
+        mock_load.assert_called_once_with("testsession")
+        mock_cache.assert_called_once_with(cached_session, "testsession")
+        # Verify token cache was transferred to the original session
+        assert getattr(cached_session, _CACHE_ATTR) == token_cache
