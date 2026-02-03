@@ -8,6 +8,7 @@ and session caching automatically.
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -185,6 +186,40 @@ def _generate_nodriver_login(plugin: SitePlugin) -> Any:
 
             # Transfer cookies and cache
             await session.transfer_nodriver_cookies_to_session()
+
+            # Extract tokens using the already-open browser (avoids separate launch)
+            _token_config = getattr(plugin, "token_config", None)
+            if _token_config is not None:
+                from graftpunk.tokens import (
+                    _CACHE_ATTR,
+                    CachedToken,
+                    extract_tokens_from_tab,
+                )
+
+                page_tokens = [t for t in _token_config.tokens if t.source == "page" and t.pattern]
+                if page_tokens:
+                    token_results = await extract_tokens_from_tab(tab, page_tokens, base_url)
+                else:
+                    token_results = {}
+
+                # Also extract cookie-source tokens
+                _tcache: dict[str, CachedToken] = {}
+                for t in _token_config.tokens:
+                    if t.source == "cookie" and t.cookie_name:
+                        val = session.cookies.get(t.cookie_name)
+                        if val:
+                            token_results[t.name] = val
+                    if t.name in token_results:
+                        _tcache[t.name] = CachedToken(
+                            name=t.name,
+                            value=token_results[t.name],
+                            extracted_at=time.time(),
+                            ttl=t.cache_duration,
+                        )
+                if _tcache:
+                    setattr(session, _CACHE_ATTR, _tcache)
+                    LOG.info("login_tokens_extracted", count=len(_tcache))
+
             cache_session(session, plugin.session_name)
             return True
 
@@ -274,6 +309,45 @@ def _generate_selenium_login(plugin: SitePlugin) -> Any:
 
             # Cache session
             session.transfer_driver_cookies_to_session()
+
+            # Extract tokens using the already-open browser (avoids separate launch)
+            _token_config = getattr(plugin, "token_config", None)
+            if _token_config is not None:
+                from graftpunk.tokens import _CACHE_ATTR, CachedToken
+
+                _tcache: dict[str, CachedToken] = {}
+                for t in _token_config.tokens:
+                    if t.source == "cookie" and t.cookie_name:
+                        val = session.cookies.get(t.cookie_name)
+                        if val:
+                            _tcache[t.name] = CachedToken(
+                                name=t.name,
+                                value=val,
+                                extracted_at=time.time(),
+                                ttl=t.cache_duration,
+                            )
+                    elif t.source == "page" and t.pattern:
+                        try:
+                            session.driver.get(f"{base_url}{t.page_url}")
+                            time.sleep(2)
+                            match = re.search(t.pattern, session.driver.page_source)
+                            if match:
+                                _tcache[t.name] = CachedToken(
+                                    name=t.name,
+                                    value=match.group(1),
+                                    extracted_at=time.time(),
+                                    ttl=t.cache_duration,
+                                )
+                        except Exception as exc:  # noqa: BLE001 — best-effort token extraction
+                            LOG.warning(
+                                "login_token_extraction_failed",
+                                token=t.name,
+                                error=str(exc),
+                            )
+                if _tcache:
+                    setattr(session, _CACHE_ATTR, _tcache)
+                    LOG.info("login_tokens_extracted", count=len(_tcache))
+
             cache_session(session, plugin.session_name)
             return True
 

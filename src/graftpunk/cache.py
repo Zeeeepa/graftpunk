@@ -419,7 +419,13 @@ def update_session_cookies(api_session: requests.Session, session_name: str) -> 
         return
 
     try:
+        from graftpunk.tokens import _CACHE_ATTR
+
         original.cookies.update(api_session.cookies)
+        # Persist token cache from working session
+        token_cache = getattr(api_session, _CACHE_ATTR, None)
+        if token_cache is not None:
+            setattr(original, _CACHE_ATTR, token_cache)
         cache_session(original, session_name)
         LOG.info("session_cookies_updated", session_name=session_name)
     except Exception as exc:  # noqa: BLE001 — best-effort save
