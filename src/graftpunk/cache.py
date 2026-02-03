@@ -388,6 +388,14 @@ def load_session_for_api(name: str) -> requests.Session:
         api_session.headers.update(browser_session.headers)
         LOG.debug("copied_headers_from_session")
 
+    # Copy cached tokens from browser session
+    from graftpunk.tokens import _CACHE_ATTR
+
+    token_cache = getattr(browser_session, _CACHE_ATTR, None)
+    if token_cache:
+        setattr(api_session, _CACHE_ATTR, token_cache)
+        LOG.debug("copied_cached_tokens_from_session", count=len(token_cache))
+
     LOG.info(
         "created_api_session_from_cached_session",
         name=name,
