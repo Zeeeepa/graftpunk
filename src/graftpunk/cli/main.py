@@ -391,8 +391,12 @@ async def _setup_observe_session(
     try:
         tab = browser.main_tab
 
-        count = await inject_cookies_to_nodriver(tab, session.cookies)
-        console.print(f"[dim]Injected {count} cookie(s)[/dim]")
+        injected, filtered = await inject_cookies_to_nodriver(tab, session.cookies)
+        msg = f"[dim]Injected {injected} cookie(s)"
+        if filtered:
+            msg += f" ({filtered} bot-detection cookie(s) filtered)"
+        msg += "[/dim]"
+        console.print(msg)
 
         run_id = datetime.datetime.now().strftime("%Y%m%d-%H%M%S") + f"-{os.getpid()}"
         storage = ObserveStorage(OBSERVE_BASE_DIR, session_name, run_id)

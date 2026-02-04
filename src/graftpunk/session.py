@@ -703,11 +703,11 @@ async def inject_cookies_to_nodriver(
     cookies: "requests.cookies.RequestsCookieJar",
     *,
     skip_bot_cookies: bool = True,
-) -> int:
+) -> tuple[int, int]:
     """Inject cached session cookies into a nodriver browser tab via CDP.
 
-    This is the inverse of transfer_nodriver_cookies_to_session() — it loads
-    cookies FROM a cached RequestsCookieJar INTO a nodriver browser.
+    Counterpart to ``BrowserSession.transfer_nodriver_cookies_to_session()``
+    — it loads cookies FROM a cached RequestsCookieJar INTO a nodriver browser.
 
     Can be called before any navigation. CookieParam includes the domain
     field, so CDP can set cookies on any domain without needing to be on
@@ -724,7 +724,9 @@ async def inject_cookies_to_nodriver(
             BOT_DETECTION_COOKIE_PREFIXES.
 
     Returns:
-        Number of cookies actually injected.
+        Tuple of (injected, skipped) — count of cookies sent to CDP and
+        count of cookies skipped (bot-detection cookies and cookies with
+        no name or value).
     """
     import nodriver.cdp.network as cdp_net
     import nodriver.cdp.storage as cdp_storage
@@ -736,8 +738,16 @@ async def inject_cookies_to_nodriver(
     cookie_params = []
     skipped = 0
     for cookie in cookies:
-        if cookie.value is None:
+        if cookie.value is None or cookie.name is None:
+            LOG.debug(
+                "inject_skipping_malformed_cookie",
+                name=cookie.name,
+                domain=getattr(cookie, "domain", None),
+            )
+            skipped += 1
             continue
+        # Cookie name matching is case-sensitive (intentional — Akamai bot
+        # cookies are consistently lowercase across known deployments).
         if skip_bot_cookies and any(
             cookie.name.startswith(prefix) for prefix in BOT_DETECTION_COOKIE_PREFIXES
         ):
@@ -758,6 +768,13 @@ async def inject_cookies_to_nodriver(
         )
     if skipped:
         LOG.info("inject_bot_cookies_skipped", count=skipped)
+    if skipped and not cookie_params:
+        LOG.warning(
+            "inject_all_cookies_filtered",
+            skipped=skipped,
+            hint="All cookies were filtered. Session may not work. "
+            "Use skip_bot_cookies=False to disable filtering.",
+        )
     if cookie_params:
         await tab.send(cdp_storage.set_cookies(cookie_params))
-    return len(cookie_params)
+    return len(cookie_params), skipped
