@@ -38,11 +38,12 @@ class TestObserveInteractiveCommandRegistered:
         output = strip_ansi(result.output)
         assert "interactive" in output
 
-    def test_observe_interactive_requires_session(self) -> None:
-        """observe interactive without session should error."""
-        result = runner.invoke(app, ["observe", "interactive", "https://example.com"])
-        assert result.exit_code != 0
-        assert "session" in result.output.lower()
+    def test_observe_interactive_without_session_proceeds(self) -> None:
+        """observe interactive without session should infer namespace from URL and proceed."""
+        with patch("graftpunk.cli.main.asyncio") as mock_asyncio:
+            result = runner.invoke(app, ["observe", "interactive", "https://example.com"])
+        assert result.exit_code == 0
+        mock_asyncio.run.assert_called_once()
 
 
 class TestRunObserveInteractiveSavesOnStop:
@@ -122,7 +123,12 @@ class TestRunObserveInteractiveSavesOnStop:
             patch("asyncio.get_running_loop", return_value=mock_loop),
             patch("asyncio.Event", return_value=already_set_event),
         ):
-            await _run_observe_interactive("test-session", "https://example.com", 5 * 1024 * 1024)
+            await _run_observe_interactive(
+                "test-session",
+                "https://example.com",
+                5 * 1024 * 1024,
+                session_name="test-session",
+            )
 
         # Verify session was loaded
         mock_load.assert_called_once_with("test-session")
@@ -160,23 +166,65 @@ class TestRunObserveInteractiveSavesOnStop:
         mock_browser.stop.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_handles_load_session_failure(self) -> None:
-        """Test that _run_observe_interactive handles session load failure gracefully."""
+    async def test_handles_load_session_failure_non_fatal(self) -> None:
+        """Session load failure is non-fatal — browser opens without cookies."""
         from graftpunk.cli.main import _run_observe_interactive
+        from graftpunk.exceptions import SessionNotFoundError
+
+        mock_tab = MagicMock()
+        mock_browser = MagicMock()
+        mock_browser.main_tab = mock_tab
+        mock_browser.get = AsyncMock(return_value=mock_tab)
+
+        mock_backend = MagicMock()
+        mock_backend.start_capture_async = AsyncMock()
+        mock_backend.take_screenshot = AsyncMock(return_value=None)
+        mock_backend.get_page_source = AsyncMock(return_value=None)
+        mock_backend.stop_capture_async = AsyncMock()
+        mock_backend.get_har_entries = MagicMock(return_value=[])
+        mock_backend.get_console_logs = MagicMock(return_value=[])
 
         mock_nodriver = MagicMock()
+        mock_nodriver.start = AsyncMock(return_value=mock_browser)
+
+        already_set_event = asyncio.Event()
+        already_set_event.set()
+        mock_loop = MagicMock()
+        mock_loop.add_signal_handler = MagicMock()
+        mock_loop.remove_signal_handler = MagicMock()
 
         with (
             patch.dict("sys.modules", {"nodriver": mock_nodriver}),
             patch(
                 "graftpunk.load_session",
-                side_effect=FileNotFoundError("Session not found"),
+                side_effect=SessionNotFoundError("Session not found"),
+            ) as mock_load,
+            patch(
+                "graftpunk.session.inject_cookies_to_nodriver",
+                new_callable=AsyncMock,
+            ) as mock_inject,
+            patch(
+                "graftpunk.observe.capture.NodriverCaptureBackend",
+                return_value=mock_backend,
             ),
+            patch("graftpunk.observe.storage.ObserveStorage", return_value=MagicMock()),
+            patch("asyncio.get_running_loop", return_value=mock_loop),
+            patch("asyncio.Event", return_value=already_set_event),
         ):
-            # Should not raise; just prints error and returns
             await _run_observe_interactive(
-                "nonexistent-session", "https://example.com", 5 * 1024 * 1024
+                "nonexistent-session",
+                "https://example.com",
+                5 * 1024 * 1024,
+                session_name="nonexistent-session",
             )
+
+        # Session was attempted
+        mock_load.assert_called_once_with("nonexistent-session")
+        # But cookies were NOT injected (session didn't load)
+        mock_inject.assert_not_called()
+        # Browser was still started and stopped
+        mock_nodriver.start.assert_awaited_once()
+        mock_browser.stop.assert_called_once()
 
 
 class TestObserveGoInteractiveFlag:

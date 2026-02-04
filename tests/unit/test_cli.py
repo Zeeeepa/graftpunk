@@ -1327,11 +1327,12 @@ class TestSessionUnsetCommand:
 class TestObserveGoCommand:
     """Tests for observe go command."""
 
-    def test_requires_session(self):
-        """observe go without session should error."""
-        result = runner.invoke(app, ["observe", "go", "https://example.com"])
-        assert result.exit_code != 0
-        assert "session" in result.output.lower()
+    def test_without_session_proceeds(self):
+        """observe go without session should infer namespace from URL and proceed."""
+        with patch("graftpunk.cli.main.asyncio") as mock_asyncio:
+            result = runner.invoke(app, ["observe", "go", "https://example.com"])
+        assert result.exit_code == 0
+        mock_asyncio.run.assert_called_once()
 
     def test_observe_go_with_session_flag(self):
         """observe go --session should run the capture flow."""
