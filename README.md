@@ -152,8 +152,8 @@ Sessions expire. graftpunk can keep them alive in the background with the keepal
 | 🔑 | **Declarative Login** | Define login flows with CSS selectors. graftpunk opens the browser, fills the form, and caches the session. Works in both Python and YAML plugins. |
 | 🌐 | **Browser Header Replay** | Captures real browser headers during login and replays them in API calls. Requests look like they came from Chrome, not Python. |
 | 🔌 | **Plugin System** | Full command framework with `CommandContext`, resource limits, output formatting, and auto-generated CLI. Python for complex logic, YAML for simple calls. |
-| 🛡️ | **Token & CSRF Support** | Declarative token extraction from cookies, headers, or page content. Auto-injects tokens into requests and retries on 403. |
-| 📡 | **Observability** | Capture screenshots, HAR files, console logs, and network traffic during browser sessions for debugging. |
+| 🛡️ | **Token & CSRF Support** | Declarative token extraction from cookies, headers, or page content. EAFP injection with automatic 403 retry. Tokens cached through session serialization. |
+| 📡 | **Observability** | Capture screenshots, HAR files, console logs, and network traffic. Interactive mode lets you browse manually while recording. |
 | 🔄 | **Keepalive Daemon** | Background daemon pings sites periodically to prevent session timeout. |
 | 🛠️ | **Ad-hoc HTTP** | `gp http get -s <session> <url>` — make one-off authenticated requests without writing a plugin. |
 | 🎨 | **Beautiful CLI** | Rich terminal output with spinners, tables, and color. `--format json\|table\|raw` on all commands. |
@@ -302,11 +302,19 @@ Capture browser activity for debugging:
 # Open authenticated browser and capture network traffic
 gp observe -s mybank go https://secure.mybank.com/dashboard
 
+# Interactive mode — browse manually, Ctrl+C to save
+gp observe -s mybank interactive https://secure.mybank.com/dashboard
+
+# Or use the --interactive flag on observe go
+gp observe -s mybank go --interactive https://secure.mybank.com/dashboard
+
 # View captured data
 gp observe list
 gp observe show mybank
 gp observe clean mybank
 ```
+
+Interactive mode opens an authenticated browser and records all network traffic (including response bodies) while you click around. Press Ctrl+C to stop — HAR files, screenshots, page source, and console logs are saved automatically.
 
 Pass `--observe full` to any command to capture screenshots, HAR files, and console logs.
 
