@@ -163,10 +163,13 @@ def observe_callback(
     obj = ctx.ensure_object(dict)
     obj["observe_no_session"] = no_session
 
-    resolved = resolve_session(session)
-    if resolved and session:
-        resolved = resolve_session_name(resolved)
-    obj["observe_session"] = resolved
+    if no_session:
+        obj["observe_session"] = None
+    else:
+        resolved = resolve_session(session)
+        if resolved and session:
+            resolved = resolve_session_name(resolved)
+        obj["observe_session"] = resolved
     if ctx.invoked_subcommand is None:
         console.print(ctx.get_help())
         raise typer.Exit(0)
