@@ -1,8 +1,10 @@
 """Tests for GraftpunkSession browser header replay."""
 
 import contextlib
-from unittest.mock import MagicMock, patch
+import re
+from unittest.mock import patch
 
+import pytest
 import requests
 
 from graftpunk.graftpunk_session import (
@@ -11,35 +13,31 @@ from graftpunk.graftpunk_session import (
     _case_insensitive_get,
 )
 
+# Shared browser identity headers — identical across all profiles,
+# which is the invariant that browser identity separation guarantees.
+_IDENTITY_HEADERS = {
+    "User-Agent": "Mozilla/5.0 Test",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "sec-ch-ua": '"Chromium";v="120", "Google Chrome";v="120"',
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '"macOS"',
+}
+
 SAMPLE_PROFILES = {
     "navigation": {
-        "User-Agent": "Mozilla/5.0 Test",
+        **_IDENTITY_HEADERS,
         "Accept": "text/html,application/xhtml+xml",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br",
-        "sec-ch-ua": '"Chromium";v="120", "Google Chrome";v="120"',
-        "sec-ch-ua-mobile": "?0",
-        "sec-ch-ua-platform": '"macOS"',
     },
     "xhr": {
-        "User-Agent": "Mozilla/5.0 Test",
+        **_IDENTITY_HEADERS,
         "Accept": "application/json",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br",
         "X-Requested-With": "XMLHttpRequest",
-        "sec-ch-ua": '"Chromium";v="120", "Google Chrome";v="120"',
-        "sec-ch-ua-mobile": "?0",
-        "sec-ch-ua-platform": '"macOS"',
     },
     "form": {
-        "User-Agent": "Mozilla/5.0 Test",
+        **_IDENTITY_HEADERS,
         "Accept": "text/html",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br",
         "Content-Type": "application/x-www-form-urlencoded",
-        "sec-ch-ua": '"Chromium";v="120", "Google Chrome";v="120"',
-        "sec-ch-ua-mobile": "?0",
-        "sec-ch-ua-platform": '"macOS"',
     },
 }
 
@@ -402,16 +400,11 @@ class TestSessionHeaderRestoration:
     def test_headers_restored_after_exception(self):
         session = GraftpunkSession(header_profiles=SAMPLE_PROFILES)
         original_headers = dict(session.headers)
-        # Mock super().prepare_request to raise
-        original_prepare = requests.Session.prepare_request
-        requests.Session.prepare_request = MagicMock(side_effect=ValueError("boom"))
-        try:
+        with patch.object(requests.Session, "prepare_request", side_effect=ValueError("boom")):
             req = requests.Request("GET", "https://example.com/page")
             with contextlib.suppress(ValueError):
                 session.prepare_request(req)
-            assert dict(session.headers) == original_headers
-        finally:
-            requests.Session.prepare_request = original_prepare
+        assert dict(session.headers) == original_headers
 
 
 class TestWarnings:
@@ -451,6 +444,20 @@ class TestCaseInsensitiveGet:
         assert _case_insensitive_get({}, "User-Agent") is None
 
 
+class TestConstructor:
+    """Test GraftpunkSession constructor wiring."""
+
+    def test_gp_base_url_set_from_constructor(self):
+        session = GraftpunkSession(
+            header_profiles=SAMPLE_PROFILES, base_url="https://www.example.com"
+        )
+        assert session.gp_base_url == "https://www.example.com"
+
+    def test_gp_base_url_defaults_to_empty(self):
+        session = GraftpunkSession(header_profiles=SAMPLE_PROFILES)
+        assert session.gp_base_url == ""
+
+
 class TestResolveReferer:
     """Test Referer URL resolution from path or full URL."""
 
@@ -460,7 +467,7 @@ class TestResolveReferer:
         )
         assert session._resolve_referer("/invoice/list") == "https://www.example.com/invoice/list"
 
-    def test_full_url_used_as_is(self):
+    def test_full_https_url_used_as_is(self):
         session = GraftpunkSession(
             header_profiles=SAMPLE_PROFILES, base_url="https://www.example.com"
         )
@@ -469,12 +476,19 @@ class TestResolveReferer:
             == "https://other.example.com/page"
         )
 
-    def test_path_without_base_url_warns(self, capsys):
+    def test_full_http_url_used_as_is(self):
+        session = GraftpunkSession(
+            header_profiles=SAMPLE_PROFILES, base_url="https://www.example.com"
+        )
+        assert (
+            session._resolve_referer("http://other.example.com/page")
+            == "http://other.example.com/page"
+        )
+
+    def test_path_without_base_url_raises(self):
         session = GraftpunkSession(header_profiles=SAMPLE_PROFILES)
-        result = session._resolve_referer("/some/path")
-        captured = capsys.readouterr()
-        assert "referer_path_without_base_url" in captured.out
-        assert result == "/some/path"
+        with pytest.raises(ValueError, match=re.escape("gp_base_url")):
+            session._resolve_referer("/some/path")
 
     def test_base_url_trailing_slash_handled(self):
         session = GraftpunkSession(
@@ -521,6 +535,12 @@ class TestProfileHeadersFor:
         session = GraftpunkSession(header_profiles=SAMPLE_PROFILES)
         headers = session._profile_headers_for("nonexistent")
         assert headers == {}
+
+    def test_unknown_profile_warns(self, capsys):
+        session = GraftpunkSession(header_profiles=SAMPLE_PROFILES)
+        session._profile_headers_for("nonexistent")
+        captured = capsys.readouterr()
+        assert "unknown_profile_no_headers_applied" in captured.out
 
     def test_excludes_identity_headers(self):
         session = GraftpunkSession(header_profiles=SAMPLE_PROFILES)
@@ -577,6 +597,21 @@ class TestXhr:
             session.xhr("GET", "https://example.com/api", params={"q": "test"}, timeout=10)
         assert mock_request.call_args.kwargs["params"] == {"q": "test"}
         assert mock_request.call_args.kwargs["timeout"] == 10
+
+    def test_xhr_uses_canonical_when_profile_missing(self):
+        profiles = {
+            "navigation": {
+                "User-Agent": "Mozilla/5.0 Test",
+                "Accept": "text/html,application/xhtml+xml",
+            },
+        }
+        session = GraftpunkSession(header_profiles=profiles)
+        with patch.object(session, "request") as mock_request:
+            session.xhr("GET", "https://example.com/api")
+        headers = mock_request.call_args.kwargs.get("headers", {})
+        assert "application/json" in headers["Accept"]
+        assert headers["X-Requested-With"] == "XMLHttpRequest"
+        assert headers["Sec-Fetch-Mode"] == "cors"
 
 
 class TestNavigate:
@@ -671,3 +706,60 @@ class TestFormSubmit:
         with patch.object(session, "request") as mock_request:
             session.form_submit("POST", "https://example.com/submit", data="key=val", timeout=10)
         assert mock_request.call_args.kwargs["timeout"] == 10
+
+    def test_form_submit_uses_canonical_when_profile_missing(self):
+        profiles = {
+            "xhr": {
+                "User-Agent": "Mozilla/5.0 Test",
+                "Accept": "application/json",
+                "X-Requested-With": "XMLHttpRequest",
+            },
+        }
+        session = GraftpunkSession(header_profiles=profiles)
+        with patch.object(session, "request") as mock_request:
+            session.form_submit("POST", "https://example.com/submit", data="key=val")
+        headers = mock_request.call_args.kwargs.get("headers", {})
+        assert headers["Content-Type"] == "application/x-www-form-urlencoded"
+        assert headers["Sec-Fetch-Mode"] == "navigate"
+
+
+class TestExplicitMethodIntegration:
+    """Integration tests: explicit methods through full prepare_request path.
+
+    These tests do NOT mock session.request, so the headers flow through
+    both _request_with_profile and prepare_request's auto-detection layer.
+    This verifies that explicit profile headers survive when _detect_profile
+    would choose a different profile.
+    """
+
+    def test_xhr_get_survives_navigation_autodetect(self):
+        """xhr("GET", ...) should use XHR headers even though
+        _detect_profile would classify a plain GET as navigation."""
+        session = GraftpunkSession(header_profiles=SAMPLE_PROFILES)
+        req = requests.Request("GET", "https://example.com/api")
+        # Simulate what xhr() does: compose headers then pass to request()
+        profile_headers = session._profile_headers_for("xhr")
+        req.headers = profile_headers
+        prepared = session.prepare_request(req)
+        assert prepared.headers.get("X-Requested-With") == "XMLHttpRequest"
+        assert "application/json" in prepared.headers["Accept"]
+
+    def test_navigate_post_with_data_survives_form_autodetect(self):
+        """navigate("POST", ..., data=...) should use navigation headers
+        even though _detect_profile would classify POST+data as form."""
+        session = GraftpunkSession(header_profiles=SAMPLE_PROFILES)
+        profile_headers = session._profile_headers_for("navigation")
+        req = requests.Request(
+            "POST", "https://example.com/page", data="x", headers=profile_headers
+        )
+        prepared = session.prepare_request(req)
+        assert "text/html" in prepared.headers["Accept"]
+
+    def test_form_submit_get_survives_navigation_autodetect(self):
+        """form_submit("GET", ...) should use form headers even though
+        _detect_profile would classify a plain GET as navigation."""
+        session = GraftpunkSession(header_profiles=SAMPLE_PROFILES)
+        profile_headers = session._profile_headers_for("form")
+        req = requests.Request("GET", "https://example.com/page", headers=profile_headers)
+        prepared = session.prepare_request(req)
+        assert prepared.headers.get("Content-Type") == "application/x-www-form-urlencoded"

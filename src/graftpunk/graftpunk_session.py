@@ -134,17 +134,57 @@ class GraftpunkSession(requests.Session):
 
         Returns:
             The resolved Referer URL string.
+
+        Raises:
+            ValueError: If a relative path is given but gp_base_url is not set.
         """
         if referer.startswith(("http://", "https://")):
             return referer
 
         if not self.gp_base_url:
-            LOG.warning("referer_path_without_base_url", referer=referer)
-            return referer
+            raise ValueError(
+                f"Cannot resolve relative referer path {referer!r} without "
+                f"gp_base_url. Either set gp_base_url on the session or pass "
+                f"a full URL as referer."
+            )
 
         base = self.gp_base_url.rstrip("/")
         path = referer if referer.startswith("/") else f"/{referer}"
         return f"{base}{path}"
+
+    def _resolve_profile(self, profile_name: str) -> dict[str, str] | None:
+        """Resolve a profile name to its header dict (captured or canonical).
+
+        Checks captured profiles first, then falls back to canonical
+        Fetch-spec headers. Logs when falling back or when the profile
+        name is unknown.
+
+        Args:
+            profile_name: Profile name ("navigation", "xhr", or "form").
+
+        Returns:
+            Copy of the header dict, or None if profile is unknown.
+        """
+        captured = self._gp_header_profiles.get(profile_name)
+        if captured:
+            return dict(captured)
+
+        canonical = _CANONICAL_REQUEST_HEADERS.get(profile_name)
+        if canonical is not None:
+            LOG.debug(
+                "profile_not_captured_using_canonical",
+                detected=profile_name,
+                available=list(self._gp_header_profiles.keys()),
+            )
+            return dict(canonical)
+
+        LOG.warning(
+            "unknown_profile_no_headers_applied",
+            profile=profile_name,
+            available_profiles=list(self._gp_header_profiles.keys()),
+            available_canonical=list(_CANONICAL_REQUEST_HEADERS.keys()),
+        )
+        return None
 
     def _profile_headers_for(self, profile_name: str) -> dict[str, str]:
         """Get request-type headers for a profile, excluding identity headers.
@@ -159,23 +199,14 @@ class GraftpunkSession(requests.Session):
         Returns:
             Dict of request-type headers, or empty dict if profile unknown.
         """
-        captured = self._gp_header_profiles.get(profile_name)
-        if captured:
-            headers = dict(captured)
-        else:
-            canonical = _CANONICAL_REQUEST_HEADERS.get(profile_name)
-            if canonical is None:
-                return {}
-            headers = dict(canonical)
+        headers = self._resolve_profile(profile_name)
+        if headers is None:
+            return {}
 
-        # Remove identity headers -- they're session-level defaults.
-        # Case-insensitive removal handles mixed-case CDP headers.
-        for key in _BROWSER_IDENTITY_HEADERS:
-            to_remove = [k for k in headers if k.lower() == key.lower()]
-            for k in to_remove:
-                headers.pop(k, None)
-
-        return headers
+        # Strip identity headers — they're session-level defaults.
+        # Case-insensitive filter handles mixed-case CDP headers.
+        lower_identity = {h.lower() for h in _BROWSER_IDENTITY_HEADERS}
+        return {k: v for k, v in headers.items() if k.lower() not in lower_identity}
 
     def _apply_browser_identity(self) -> None:
         """Copy browser identity headers from profiles onto the session.
@@ -327,10 +358,11 @@ class GraftpunkSession(requests.Session):
             profile_headers.update(headers)
 
         # Note: self.request() calls prepare_request(), which runs
-        # _detect_profile() again. The auto-detected profile may differ
-        # from the explicit one here, but request-level headers (ours)
-        # take precedence over profile headers in the merge logic,
-        # so the correct headers always win.
+        # _detect_profile() again and may select a different profile.
+        # However, our explicit headers are passed as request-level
+        # headers, which take precedence over session-level profile
+        # headers in the requests merge logic (see prepare_request's
+        # priority chain).
         return self.request(method.upper(), url, headers=profile_headers, **kwargs)
 
     def _detect_profile(self, request: requests.Request) -> str:
@@ -393,6 +425,9 @@ class GraftpunkSession(requests.Session):
         request characteristics. Profile headers are applied as session-level
         defaults so that any headers explicitly set by the caller take precedence.
 
+        Session headers are temporarily modified during preparation and restored
+        afterward (even on exception) to avoid permanently altering session state.
+
         Args:
             request: The request to prepare.
             **kwargs: Additional arguments passed to requests.Session.prepare_request().
@@ -404,29 +439,12 @@ class GraftpunkSession(requests.Session):
             return super().prepare_request(request, **kwargs)
 
         profile_name = self._detect_profile(request)
-        profile_headers = self._gp_header_profiles.get(profile_name)
-
-        if not profile_headers:
-            canonical = _CANONICAL_REQUEST_HEADERS.get(profile_name)
-            if canonical is not None:
-                LOG.debug(
-                    "profile_not_captured_using_canonical",
-                    detected=profile_name,
-                    available=list(self._gp_header_profiles.keys()),
-                )
-                profile_headers = dict(canonical)
-            else:
-                LOG.warning(
-                    "unknown_profile_no_headers_applied",
-                    profile=profile_name,
-                    available_profiles=list(self._gp_header_profiles.keys()),
-                    available_canonical=list(_CANONICAL_REQUEST_HEADERS.keys()),
-                )
+        profile_headers = self._resolve_profile(profile_name)
 
         if profile_headers:
             # Apply profile headers as session defaults (lowest priority).
-            # Priority: caller headers > request headers >
-            # user session headers > profile > defaults.
+            # Priority: request headers (caller-supplied) >
+            # user-modified session headers > profile > session defaults.
             original_session_headers = dict(self.headers)
 
             # Start from profile headers as the base
