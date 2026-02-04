@@ -497,6 +497,8 @@ def _ensure_group_hierarchy(parent_group: click.Group, dotted_path: str) -> clic
     for part in dotted_path.split("."):
         existing = current.commands.get(part)
         if existing is None:
+            # Use TyperGroup (not click.Group) so nested subcommand help
+            # output gets the same rich formatting as top-level groups.
             new_group = typer.core.TyperGroup(
                 name=part,
                 no_args_is_help=True,
