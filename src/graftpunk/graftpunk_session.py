@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Final
 
 import requests
 
@@ -11,18 +11,22 @@ from graftpunk.logging import get_logger
 LOG = get_logger(__name__)
 
 # Headers that identify the browser itself (shared across all request types).
-_BROWSER_IDENTITY_HEADERS: frozenset[str] = frozenset(
+# These are invariant across navigation/xhr/form — they reflect the browser's
+# identity and locale settings, not what kind of request is being made.
+_BROWSER_IDENTITY_HEADERS: Final[frozenset[str]] = frozenset(
     {
         "User-Agent",
         "sec-ch-ua",
         "sec-ch-ua-mobile",
         "sec-ch-ua-platform",
+        "Accept-Language",
+        "Accept-Encoding",
     }
 )
 
 # Canonical Chrome request-type headers used as a fallback when a captured
 # profile for the detected request type is not available.
-_CANONICAL_REQUEST_HEADERS: dict[str, dict[str, str]] = {
+_CANONICAL_REQUEST_HEADERS: Final[dict[str, dict[str, str]]] = {
     "navigation": {
         "Accept": (
             "text/html,application/xhtml+xml,application/xml;"

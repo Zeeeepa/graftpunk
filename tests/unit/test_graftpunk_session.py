@@ -13,6 +13,7 @@ SAMPLE_PROFILES = {
         "User-Agent": "Mozilla/5.0 Test",
         "Accept": "text/html,application/xhtml+xml",
         "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
         "sec-ch-ua": '"Chromium";v="120", "Google Chrome";v="120"',
         "sec-ch-ua-mobile": "?0",
         "sec-ch-ua-platform": '"macOS"',
@@ -20,6 +21,8 @@ SAMPLE_PROFILES = {
     "xhr": {
         "User-Agent": "Mozilla/5.0 Test",
         "Accept": "application/json",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
         "X-Requested-With": "XMLHttpRequest",
         "sec-ch-ua": '"Chromium";v="120", "Google Chrome";v="120"',
         "sec-ch-ua-mobile": "?0",
@@ -28,6 +31,8 @@ SAMPLE_PROFILES = {
     "form": {
         "User-Agent": "Mozilla/5.0 Test",
         "Accept": "text/html",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
         "Content-Type": "application/x-www-form-urlencoded",
         "sec-ch-ua": '"Chromium";v="120", "Google Chrome";v="120"',
         "sec-ch-ua-mobile": "?0",
