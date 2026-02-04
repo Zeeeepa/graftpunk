@@ -157,6 +157,21 @@ Each method:
 
 This eliminates the need for plugins to maintain their own header-building infrastructure. A plugin that previously needed 150 lines of request helpers can reduce to one-line calls.
 
+#### Auto-Detection Rules
+
+When using `session.get()`, `session.post()`, etc. (the standard `requests.Session` methods), `GraftpunkSession` auto-detects which profile to apply via `_detect_profile()`:
+
+| Condition | Profile |
+|-----------|---------|
+| `gp_default_profile` is set | Whatever it's set to |
+| Non-GET/POST method (DELETE, PUT, PATCH, HEAD, OPTIONS) | `xhr` — browsers can only issue these via `fetch()`/`XMLHttpRequest` (HTML spec §4.10.18.6) |
+| `Accept: application/json` in caller headers | `xhr` |
+| POST with `json=` kwarg | `xhr` |
+| POST with `data=` kwarg | `form` |
+| GET without `Accept: application/json` | `navigation` |
+
+The explicit methods (`xhr()`, `navigate()`, `form_submit()`) bypass auto-detection and apply the requested profile directly. Their headers are passed as request-level headers, which take precedence over session-level auto-detected headers in the `requests` merge logic.
+
 ### Session Persistence After Commands
 
 Commands can opt into saving session changes back to the cache. This is useful when API responses set new cookies (e.g., refreshed auth tokens):
