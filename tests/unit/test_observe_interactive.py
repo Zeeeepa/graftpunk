@@ -175,8 +175,10 @@ class TestRunObserveInteractiveSavesOnStop:
         mock_browser.stop.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_session_not_found_returns_early(self) -> None:
-        """Session not found causes early return — browser is never started."""
+    async def test_session_not_found_exits_with_error(self) -> None:
+        """Session not found raises typer.Exit(1) — browser is never started."""
+        import typer
+
         from graftpunk.cli.main import _run_observe_interactive
         from graftpunk.exceptions import SessionNotFoundError
 
@@ -189,6 +191,7 @@ class TestRunObserveInteractiveSavesOnStop:
                 "graftpunk.load_session",
                 side_effect=SessionNotFoundError("Session not found"),
             ) as mock_load,
+            pytest.raises(typer.Exit) as exc_info,
         ):
             await _run_observe_interactive(
                 "nonexistent-session",
@@ -197,9 +200,10 @@ class TestRunObserveInteractiveSavesOnStop:
                 session_name="nonexistent-session",
             )
 
+        assert exc_info.value.exit_code == 1
         # Session was attempted
         mock_load.assert_called_once_with("nonexistent-session")
-        # Browser was never started (early return from _setup_observe_session)
+        # Browser was never started
         mock_nodriver.start.assert_not_awaited()
 
     @pytest.mark.asyncio

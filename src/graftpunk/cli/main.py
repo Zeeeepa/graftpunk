@@ -520,7 +520,7 @@ async def _run_observe_go(
         namespace, url, max_body_size, headless=True, session_name=session_name
     )
     if result is None:
-        return
+        raise typer.Exit(1)
 
     browser, tab, storage, backend = result
 
@@ -541,7 +541,7 @@ async def _run_observe_interactive(
         namespace, url, max_body_size, headless=False, session_name=session_name
     )
     if result is None:
-        return
+        raise typer.Exit(1)
 
     browser, tab, storage, backend = result
 
