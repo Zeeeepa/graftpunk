@@ -356,7 +356,10 @@ def _http_command(method: str) -> typer.models.CommandFunctionType:
             if no_session:
                 from graftpunk.plugins import infer_site_name
 
-                resolved_namespace = infer_site_name(url) or "unknown"
+                resolved_namespace = infer_site_name(url)
+                if not resolved_namespace:
+                    LOG.warning("namespace_inference_failed", url=url, fallback="unknown")
+                    resolved_namespace = "unknown"
             else:
                 resolved_namespace = session or resolve_session(None) or "unknown"
             request_body = resolved_json or data
