@@ -150,6 +150,10 @@ When injecting cookies into a nodriver browser (for observe mode, token extracti
 Filtered by default:
 - `bm_*`, `ak_bmsc`, `_abck` (Akamai Bot Manager)
 
+The filter lives in `inject_cookies_to_nodriver()`, the single chokepoint through which all cookies flow into nodriver browsers (observe mode, token extraction, interactive observe). The function returns a `tuple[int, int]` of (injected, skipped) so callers have visibility into what was filtered. If all cookies are filtered, a warning is logged indicating the session may not work.
+
+Cookies with `None` name or value are also skipped with a debug log (malformed cookie guard).
+
 The filter can be disabled per-call with `skip_bot_cookies=False`. The `BOT_DETECTION_COOKIE_PREFIXES` tuple can be extended with patterns for Cloudflare, Imperva, PerimeterX, DataDome, and other WAFs as they are encountered.
 
 ### Storage Backends

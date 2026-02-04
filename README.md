@@ -147,7 +147,7 @@ Sessions expire. graftpunk can keep them alive in the background with the keepal
 
 | | Feature | Why It Matters |
 |:--|:--|:--|
-| 🥷 | **Stealth Mode** | Multiple backends: Selenium with undetected-chromedriver, or NoDriver for CDP-direct automation without WebDriver detection. |
+| 🥷 | **Stealth Mode** | Multiple backends: Selenium with undetected-chromedriver, or NoDriver for CDP-direct automation without WebDriver detection. Bot-detection cookies (Akamai, etc.) are automatically filtered during cookie injection to prevent WAF rejection. |
 | 🔒 | **Encrypted Storage** | Sessions encrypted with AES-128 (Fernet). Local by default, optional cloud storage. |
 | 🔑 | **Declarative Login** | Define login flows with CSS selectors. graftpunk opens the browser, fills the form, and caches the session. Works in both Python and YAML plugins. |
 | 🌐 | **Browser Header Replay** | Captures real browser headers during login and replays them in API calls. Requests look like they came from Chrome, not Python. |
@@ -348,6 +348,8 @@ graftpunk supports two browser automation backends (both included by default):
 | `nodriver` | Enterprise sites, better anti-detection |
 
 **Why NoDriver?** NoDriver uses Chrome DevTools Protocol (CDP) directly without the WebDriver binary, eliminating a common detection vector used by anti-bot systems.
+
+**Bot-detection cookie filtering:** When injecting session cookies into a nodriver browser (for observe mode, token extraction, etc.), graftpunk automatically skips known WAF tracking cookies (Akamai `bm_*`, `ak_bmsc`, `_abck`). These cookies carry stale bot-classification state that causes WAFs to reject the browser with `ERR_HTTP2_PROTOCOL_ERROR`. Disable with `skip_bot_cookies=False` if needed.
 
 ```python
 from graftpunk import BrowserSession
