@@ -1,5 +1,7 @@
 """Tests for output formatters."""
 
+import csv
+import io
 import json
 from unittest.mock import MagicMock, patch
 
@@ -10,6 +12,7 @@ from rich.table import Table
 from graftpunk.plugins.cli_plugin import CommandResult
 from graftpunk.plugins.formatters import (
     BUILTIN_FORMATTERS,
+    CsvFormatter,
     JsonFormatter,
     OutputFormatter,
     RawFormatter,
@@ -31,19 +34,23 @@ class TestOutputFormatterProtocol:
     def test_raw_formatter_satisfies_protocol(self) -> None:
         assert isinstance(RawFormatter(), OutputFormatter)
 
-    def test_builtin_formatters_has_all_three(self) -> None:
+    def test_csv_formatter_satisfies_protocol(self) -> None:
+        assert isinstance(CsvFormatter(), OutputFormatter)
+
+    def test_builtin_formatters_has_all_four(self) -> None:
         assert "json" in BUILTIN_FORMATTERS
         assert "table" in BUILTIN_FORMATTERS
         assert "raw" in BUILTIN_FORMATTERS
+        assert "csv" in BUILTIN_FORMATTERS
 
     def test_custom_class_satisfies_protocol(self) -> None:
-        class CsvFormatter:
-            name = "csv"
+        class YamlFormatter:
+            name = "yaml"
 
             def format(self, data: object, console: Console) -> None:
-                console.print("csv output")
+                console.print("yaml output")
 
-        assert isinstance(CsvFormatter(), OutputFormatter)
+        assert isinstance(YamlFormatter(), OutputFormatter)
 
 
 class TestFormatOutput:
@@ -68,6 +75,17 @@ class TestFormatOutput:
         console = MagicMock(spec=Console)
         format_output("hello", "raw", console)
         console.print.assert_called_once_with("hello")
+
+    def test_dispatches_to_csv_formatter(self) -> None:
+        console = MagicMock(spec=Console)
+        data = [{"name": "Alice", "age": "30"}, {"name": "Bob", "age": "25"}]
+        format_output(data, "csv", console)
+        console.print.assert_called_once()
+        output = console.print.call_args[0][0]
+        rows = list(csv.reader(io.StringIO(output)))
+        assert rows[0] == ["name", "age"]
+        assert rows[1] == ["Alice", "30"]
+        assert rows[2] == ["Bob", "25"]
 
     def test_unknown_format_falls_back_to_json(self) -> None:
         """Unknown format names fall back to the json formatter."""
@@ -196,6 +214,76 @@ class TestRawFormatter:
         console = MagicMock(spec=Console)
         RawFormatter().format(42, console)
         console.print.assert_called_once_with(json.dumps(42, default=str))
+
+
+class TestCsvFormatter:
+    def test_list_of_dicts_produces_csv(self) -> None:
+        console = MagicMock(spec=Console)
+        data = [{"name": "Alice", "age": "30"}, {"name": "Bob", "age": "25"}]
+        CsvFormatter().format(data, console)
+        console.print.assert_called_once()
+        output = console.print.call_args[0][0]
+        rows = list(csv.reader(io.StringIO(output)))
+        assert rows[0] == ["name", "age"]
+        assert rows[1] == ["Alice", "30"]
+        assert rows[2] == ["Bob", "25"]
+        assert len(rows) == 3
+
+    def test_single_dict_produces_single_row_csv(self) -> None:
+        console = MagicMock(spec=Console)
+        data = {"name": "Alice", "age": "30"}
+        CsvFormatter().format(data, console)
+        console.print.assert_called_once()
+        output = console.print.call_args[0][0]
+        rows = list(csv.reader(io.StringIO(output)))
+        assert rows[0] == ["name", "age"]
+        assert rows[1] == ["Alice", "30"]
+        assert len(rows) == 2
+
+    def test_string_passthrough(self) -> None:
+        console = MagicMock(spec=Console)
+        csv_str = "name,age\nAlice,30\n"
+        CsvFormatter().format(csv_str, console)
+        console.print.assert_called_once_with(csv_str)
+
+    def test_nested_dict_json_serialized(self) -> None:
+        console = MagicMock(spec=Console)
+        data = [{"name": "Alice", "meta": {"role": "admin"}}]
+        CsvFormatter().format(data, console)
+        output = console.print.call_args[0][0]
+        rows = list(csv.reader(io.StringIO(output)))
+        assert rows[1][1] == json.dumps({"role": "admin"})
+
+    def test_nested_list_json_serialized(self) -> None:
+        console = MagicMock(spec=Console)
+        data = [{"name": "Alice", "tags": ["a", "b"]}]
+        CsvFormatter().format(data, console)
+        output = console.print.call_args[0][0]
+        rows = list(csv.reader(io.StringIO(output)))
+        assert rows[1][1] == json.dumps(["a", "b"])
+
+    def test_empty_list_produces_empty_output(self) -> None:
+        console = MagicMock(spec=Console)
+        CsvFormatter().format([], console)
+        console.print.assert_not_called()
+
+    def test_non_dict_non_list_non_string_falls_back(self) -> None:
+        console = MagicMock(spec=Console)
+        CsvFormatter().format(42, console)
+        console.print.assert_called_once_with(json.dumps(42, default=str))
+
+    def test_list_of_dicts_with_missing_keys(self) -> None:
+        console = MagicMock(spec=Console)
+        data = [{"name": "Alice", "age": "30"}, {"name": "Bob"}]
+        CsvFormatter().format(data, console)
+        output = console.print.call_args[0][0]
+        rows = list(csv.reader(io.StringIO(output)))
+        assert rows[0] == ["name", "age"]
+        assert rows[1] == ["Alice", "30"]
+        assert rows[2] == ["Bob", ""]
+
+    def test_satisfies_protocol(self) -> None:
+        assert isinstance(CsvFormatter(), OutputFormatter)
 
 
 class TestCommandResultUnwrapping:
@@ -349,6 +437,17 @@ class TestFormatPrecedence:
         arg = console.print.call_args[0][0]
         # Hint says "table" and format_type is "json" (default), so table is used
         assert isinstance(arg, Table)
+
+    def test_hint_csv_applies_when_format_is_json_default(self) -> None:
+        """When format_type is json (default), csv hint takes effect."""
+        console = MagicMock(spec=Console)
+        result = CommandResult(data=[{"a": "1"}], format_hint="csv")
+        format_output(result, "json", console)
+        console.print.assert_called_once()
+        output = console.print.call_args[0][0]
+        rows = list(csv.reader(io.StringIO(output)))
+        assert rows[0] == ["a"]
+        assert rows[1] == ["1"]
 
     def test_hint_ignored_when_format_is_explicit_non_json(self) -> None:
         """When user explicitly picks raw, hint is ignored even if set."""
