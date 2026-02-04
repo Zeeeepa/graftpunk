@@ -123,7 +123,8 @@ async def _extract_tokens_browser(
     browser = await nodriver_start(headless=True)
     try:
         tab = browser.main_tab
-        await inject_cookies_to_nodriver(tab, session.cookies)
+        injected, _skipped = await inject_cookies_to_nodriver(tab, session.cookies)
+        LOG.debug("token_extraction_cookies_injected", count=injected)
 
         results: dict[str, str] = {}
 

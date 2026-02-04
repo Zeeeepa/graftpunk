@@ -150,7 +150,7 @@ When injecting cookies into a nodriver browser (for observe mode, token extracti
 Filtered by default:
 - `bm_*`, `ak_bmsc`, `_abck` (Akamai Bot Manager)
 
-The filter can be disabled per-call with `skip_bot_cookies=False`. Additional WAF patterns (Cloudflare, Imperva, PerimeterX, DataDome) are included as commented-out entries in `BOT_DETECTION_COOKIE_PREFIXES` for easy activation.
+The filter can be disabled per-call with `skip_bot_cookies=False`. The `BOT_DETECTION_COOKIE_PREFIXES` tuple can be extended with patterns for Cloudflare, Imperva, PerimeterX, DataDome, and other WAFs as they are encountered.
 
 ### Storage Backends
 

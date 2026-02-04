@@ -1738,13 +1738,14 @@ class TestInjectCookiesToNodriver:
         jar.set("csrf", "xyz", domain=".example.com", path="/")
 
         mock_tab = AsyncMock()
-        result = await inject_cookies_to_nodriver(mock_tab, jar)
-        assert result == 2
+        injected, skipped = await inject_cookies_to_nodriver(mock_tab, jar)
+        assert injected == 2
+        assert skipped == 0
         mock_tab.send.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_returns_zero_for_empty_jar(self) -> None:
-        """Inject cookies returns 0 and doesn't call send when jar is empty."""
+        """Inject cookies returns (0, 0) and doesn't call send when jar is empty."""
         from unittest.mock import AsyncMock
 
         from requests.cookies import RequestsCookieJar
@@ -1753,8 +1754,9 @@ class TestInjectCookiesToNodriver:
 
         jar = RequestsCookieJar()
         mock_tab = AsyncMock()
-        result = await inject_cookies_to_nodriver(mock_tab, jar)
-        assert result == 0
+        injected, skipped = await inject_cookies_to_nodriver(mock_tab, jar)
+        assert injected == 0
+        assert skipped == 0
         mock_tab.send.assert_not_called()
 
 
@@ -1764,7 +1766,7 @@ class TestBotCookieFiltering:
     @pytest.mark.asyncio
     async def test_skips_akamai_cookies_by_default(self) -> None:
         """Akamai bot-detection cookies are filtered out by default."""
-        from unittest.mock import AsyncMock
+        from unittest.mock import AsyncMock, patch
 
         from requests.cookies import RequestsCookieJar
 
@@ -1778,11 +1780,24 @@ class TestBotCookieFiltering:
         jar.set("csrf", "xyz", domain=".example.com", path="/")
 
         mock_tab = AsyncMock()
-        result = await inject_cookies_to_nodriver(mock_tab, jar)
+
+        # Capture the cookie_params list passed to cdp_storage.set_cookies
+        captured_params: list = []
+
+        def fake_set_cookies(params: list) -> None:
+            captured_params.extend(params)
+
+        with patch("nodriver.cdp.storage.set_cookies", side_effect=fake_set_cookies):
+            injected, skipped = await inject_cookies_to_nodriver(mock_tab, jar)
 
         # Only session_id and csrf should be injected (3 Akamai cookies skipped)
-        assert result == 2
+        assert injected == 2
+        assert skipped == 3
         mock_tab.send.assert_called_once()
+
+        # Verify the correct cookies were sent to CDP (not just count)
+        cookie_names = {p.name for p in captured_params}
+        assert cookie_names == {"session_id", "csrf"}
 
     @pytest.mark.asyncio
     async def test_skip_bot_cookies_false_injects_all(self) -> None:
@@ -1799,9 +1814,10 @@ class TestBotCookieFiltering:
         jar.set("_abck", "akamai_bot", domain=".example.com", path="/")
 
         mock_tab = AsyncMock()
-        result = await inject_cookies_to_nodriver(mock_tab, jar, skip_bot_cookies=False)
+        injected, skipped = await inject_cookies_to_nodriver(mock_tab, jar, skip_bot_cookies=False)
 
-        assert result == 3
+        assert injected == 3
+        assert skipped == 0
         mock_tab.send.assert_called_once()
 
     @pytest.mark.asyncio
@@ -1820,9 +1836,10 @@ class TestBotCookieFiltering:
         jar.set("bm_sz", "val4", domain=".example.com", path="/")
 
         mock_tab = AsyncMock()
-        result = await inject_cookies_to_nodriver(mock_tab, jar)
+        injected, skipped = await inject_cookies_to_nodriver(mock_tab, jar)
 
-        assert result == 0
+        assert injected == 0
+        assert skipped == 4
         mock_tab.send.assert_not_called()
 
     @pytest.mark.asyncio
@@ -1839,13 +1856,13 @@ class TestBotCookieFiltering:
         jar.set("abcdef", "val", domain=".example.com", path="/")
 
         mock_tab = AsyncMock()
-        result = await inject_cookies_to_nodriver(mock_tab, jar)
+        injected, skipped = await inject_cookies_to_nodriver(mock_tab, jar)
 
         # "bookmark" does NOT start with "bm_", "abcdef" does NOT start with "_abck"
-        assert result == 2
+        assert injected == 2
+        assert skipped == 0
 
-    @pytest.mark.asyncio
-    async def test_constant_is_importable(self) -> None:
+    def test_constant_is_importable(self) -> None:
         """BOT_DETECTION_COOKIE_PREFIXES is a public constant."""
         from graftpunk.session import BOT_DETECTION_COOKIE_PREFIXES
 

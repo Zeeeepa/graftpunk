@@ -109,7 +109,7 @@ class TestRunObserveInteractiveSavesOnStop:
             patch(
                 "graftpunk.session.inject_cookies_to_nodriver",
                 new_callable=AsyncMock,
-                return_value=1,
+                return_value=(1, 0),
             ) as mock_inject,
             patch(
                 "graftpunk.observe.capture.NodriverCaptureBackend",

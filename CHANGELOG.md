@@ -39,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Akamai cookies (`bm_*`, `ak_bmsc`, `_abck`) filtered by default in `inject_cookies_to_nodriver()`
   - Prevents `ERR_HTTP2_PROTOCOL_ERROR` caused by stale bot-classification state
   - Opt-out via `skip_bot_cookies=False` parameter
-  - Commented-out patterns for Cloudflare, Imperva, PerimeterX, DataDome (ready to enable)
+  - Extensible to Cloudflare, Imperva, PerimeterX, and DataDome WAFs
 
 - **Plugin Interface v1**: Full command framework for building CLI tools on top of authenticated sessions
   - `SitePlugin` base class with `@command` decorator for defining CLI commands

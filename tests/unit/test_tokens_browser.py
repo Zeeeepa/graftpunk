@@ -56,7 +56,7 @@ class TestExtractTokensBrowser:
             patch(
                 "graftpunk.session.inject_cookies_to_nodriver",
                 new_callable=AsyncMock,
-                return_value=1,
+                return_value=(1, 0),
             ),
             patch("graftpunk.tokens._deregister_nodriver_browser"),
         ):
@@ -97,7 +97,7 @@ class TestExtractTokensBrowser:
             patch(
                 "graftpunk.session.inject_cookies_to_nodriver",
                 new_callable=AsyncMock,
-                return_value=1,
+                return_value=(1, 0),
             ),
             patch("graftpunk.tokens._deregister_nodriver_browser"),
         ):
@@ -141,7 +141,7 @@ class TestExtractTokensBrowser:
             patch(
                 "graftpunk.session.inject_cookies_to_nodriver",
                 new_callable=AsyncMock,
-                return_value=1,
+                return_value=(1, 0),
             ),
             patch("graftpunk.tokens._deregister_nodriver_browser"),
         ):
@@ -177,7 +177,7 @@ class TestExtractTokensBrowser:
             patch(
                 "graftpunk.session.inject_cookies_to_nodriver",
                 new_callable=AsyncMock,
-                return_value=1,
+                return_value=(1, 0),
             ),
             patch("graftpunk.tokens._deregister_nodriver_browser"),
         ):
@@ -206,7 +206,7 @@ class TestExtractTokensBrowser:
         mock_browser.stop = MagicMock()
         mock_browser.main_tab = mock_tab
 
-        mock_inject = AsyncMock(return_value=1)
+        mock_inject = AsyncMock(return_value=(1, 0))
 
         with (
             patch("graftpunk.tokens.nodriver_start", return_value=mock_browser),
