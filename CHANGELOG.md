@@ -139,6 +139,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `BrowserSession` supports context manager protocol (sync and async)
 - `inject_cookies_to_nodriver()` returns `tuple[int, int]` (injected, skipped) instead of `int`; callers can now see how many cookies were filtered
 - `inject_cookies_to_nodriver()` logs a warning when all cookies are filtered (indicates the session may not work)
+- `GraftpunkSession.__init__` now accepts `base_url` keyword argument for Referer path resolution
+- `_detect_profile()` classifies non-GET/POST methods as XHR (was: navigation); canonical Chrome request-type headers used as fallback when a captured profile is missing
 - Chrome sandbox disabled by default for NoDriver; `--no-sandbox` warning suppressed
 - Auto-detect Chrome version for matching ChromeDriver
 
