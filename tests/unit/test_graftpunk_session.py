@@ -1,5 +1,8 @@
 """Tests for GraftpunkSession browser header replay."""
 
+import contextlib
+from unittest.mock import MagicMock
+
 import requests
 
 from graftpunk.graftpunk_session import (
@@ -205,11 +208,51 @@ class TestBrowserIdentityGuarantee:
         session = GraftpunkSession(header_profiles=profiles)
         assert session.headers["User-Agent"] == "Mozilla/5.0 Lowercase"
 
-    def test_sec_ch_ua_headers_extracted(self):
+    def test_all_six_identity_headers_extracted(self):
         session = GraftpunkSession(header_profiles=SAMPLE_PROFILES)
+        assert session.headers["User-Agent"] == "Mozilla/5.0 Test"
         assert session.headers["sec-ch-ua"] == '"Chromium";v="120", "Google Chrome";v="120"'
         assert session.headers["sec-ch-ua-mobile"] == "?0"
         assert session.headers["sec-ch-ua-platform"] == '"macOS"'
+        assert session.headers["Accept-Language"] == "en-US,en;q=0.9"
+        assert session.headers["Accept-Encoding"] == "gzip, deflate, br"
+
+    def test_no_profile_has_user_agent(self):
+        profiles = {
+            "navigation": {"Accept": "text/html"},
+            "xhr": {"Accept": "application/json"},
+        }
+        session = GraftpunkSession(header_profiles=profiles)
+        # Falls back to python-requests default
+        assert "python-requests" in session.headers.get("User-Agent", "").lower()
+
+    def test_mixed_case_identity_headers_extracted(self):
+        profiles = {
+            "navigation": {
+                "user-agent": "Mozilla/5.0 Mixed",
+                "ACCEPT-LANGUAGE": "fr-FR,fr;q=0.9",
+                "accept-encoding": "gzip, deflate",
+                "SEC-CH-UA": '"Chromium";v="121"',
+                "Accept": "text/html",
+            },
+        }
+        session = GraftpunkSession(header_profiles=profiles)
+        assert session.headers["User-Agent"] == "Mozilla/5.0 Mixed"
+        assert session.headers["Accept-Language"] == "fr-FR,fr;q=0.9"
+        assert session.headers["Accept-Encoding"] == "gzip, deflate"
+        assert session.headers["sec-ch-ua"] == '"Chromium";v="121"'
+
+    def test_partial_identity_headers_only_present_extracted(self):
+        profiles = {
+            "xhr": {
+                "User-Agent": "Mozilla/5.0 Partial",
+                "Accept": "application/json",
+            },
+        }
+        session = GraftpunkSession(header_profiles=profiles)
+        assert session.headers["User-Agent"] == "Mozilla/5.0 Partial"
+        # sec-ch-ua was not in the profile, should not be in session
+        assert "sec-ch-ua" not in session.headers
 
     def test_identity_treated_as_default_not_user_set(self):
         session = GraftpunkSession(header_profiles=SAMPLE_PROFILES)
@@ -263,6 +306,23 @@ class TestCanonicalFallback:
         assert canonical["X-Requested-With"] == "XMLHttpRequest"
         assert canonical["Sec-Fetch-Mode"] == "cors"
 
+    def test_canonical_form_has_correct_headers(self):
+        canonical = _CANONICAL_REQUEST_HEADERS["form"]
+        assert "text/html" in canonical["Accept"]
+        assert canonical["Content-Type"] == "application/x-www-form-urlencoded"
+        assert canonical["Sec-Fetch-Mode"] == "navigate"
+        assert canonical["Sec-Fetch-Dest"] == "document"
+
+    def test_unknown_default_profile_warns(self, capsys):
+        session = GraftpunkSession(header_profiles=SAMPLE_PROFILES)
+        session.gp_default_profile = "typo"
+        req = requests.Request("GET", "https://example.com/page")
+        prepared = session.prepare_request(req)
+        captured = capsys.readouterr()
+        assert "unknown_profile_no_headers_applied" in captured.out
+        # Browser identity still present from session defaults
+        assert prepared.headers["User-Agent"] == "Mozilla/5.0 Test"
+
     def test_captured_profile_preferred_over_canonical(self):
         session = GraftpunkSession(header_profiles=SAMPLE_PROFILES)
         req = requests.Request("GET", "https://example.com/page")
@@ -287,6 +347,73 @@ class TestCanonicalFallback:
         assert prepared.headers["User-Agent"] == "Mozilla/5.0 XHR Only"
 
 
+class TestHeaderPriorityChain:
+    """Full priority chain: caller > user-set session > profile > identity defaults."""
+
+    def test_full_priority_chain(self):
+        session = GraftpunkSession(header_profiles=SAMPLE_PROFILES)
+        # User-set session header overrides profile
+        session.headers["Accept-Language"] = "de-DE"
+        req = requests.Request(
+            "GET",
+            "https://example.com/page",
+            # Caller header overrides everything
+            headers={"User-Agent": "CallerAgent"},
+        )
+        prepared = session.prepare_request(req)
+        # Caller wins over profile
+        assert prepared.headers["User-Agent"] == "CallerAgent"
+        # User-set session wins over profile
+        assert prepared.headers["Accept-Language"] == "de-DE"
+        # Profile value used when not overridden
+        assert prepared.headers["Accept"] == "text/html,application/xhtml+xml"
+        # Identity default (sec-ch-ua) still present
+        assert prepared.headers["sec-ch-ua"] == '"Chromium";v="120", "Google Chrome";v="120"'
+
+
+class TestSessionHeaderRestoration:
+    """Session headers must be restored after prepare_request, even on error."""
+
+    def test_headers_restored_after_successful_prepare(self):
+        session = GraftpunkSession(header_profiles=SAMPLE_PROFILES)
+        original_headers = dict(session.headers)
+        req = requests.Request("GET", "https://example.com/page")
+        session.prepare_request(req)
+        assert dict(session.headers) == original_headers
+
+    def test_headers_restored_after_exception(self):
+        session = GraftpunkSession(header_profiles=SAMPLE_PROFILES)
+        original_headers = dict(session.headers)
+        # Mock super().prepare_request to raise
+        original_prepare = requests.Session.prepare_request
+        requests.Session.prepare_request = MagicMock(side_effect=ValueError("boom"))
+        try:
+            req = requests.Request("GET", "https://example.com/page")
+            with contextlib.suppress(ValueError):
+                session.prepare_request(req)
+            assert dict(session.headers) == original_headers
+        finally:
+            requests.Session.prepare_request = original_prepare
+
+
+class TestWarnings:
+    """Warning logs for misconfiguration scenarios."""
+
+    def test_no_ua_in_any_profile_warns(self, capsys):
+        profiles = {
+            "navigation": {"Accept": "text/html"},
+            "xhr": {"Accept": "application/json"},
+        }
+        GraftpunkSession(header_profiles=profiles)
+        captured = capsys.readouterr()
+        assert "no_browser_identity_in_profiles" in captured.out
+
+    def test_empty_profiles_does_not_warn(self, capsys):
+        GraftpunkSession(header_profiles={})
+        captured = capsys.readouterr()
+        assert "no_browser_identity_in_profiles" not in captured.out
+
+
 class TestCaseInsensitiveGet:
     """Test the _case_insensitive_get helper function."""
 
@@ -296,5 +423,11 @@ class TestCaseInsensitiveGet:
     def test_lowercase_match(self):
         assert _case_insensitive_get({"user-agent": "test"}, "User-Agent") == "test"
 
+    def test_uppercase_match(self):
+        assert _case_insensitive_get({"ACCEPT": "text/html"}, "Accept") == "text/html"
+
     def test_missing_key(self):
         assert _case_insensitive_get({"Accept": "text/html"}, "User-Agent") is None
+
+    def test_empty_mapping(self):
+        assert _case_insensitive_get({}, "User-Agent") is None
