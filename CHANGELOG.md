@@ -127,7 +127,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `requires_session` flag replaces `session_name=""` hack for sessionless commands
 - All metadata types are frozen dataclasses (`CommandMetadata`, `PluginParamSpec`, discovery errors)
 - `BrowserSession` supports context manager protocol (sync and async)
-- NoDriver cookie transfer improved with `inject_cookies_to_nodriver()`
+- `inject_cookies_to_nodriver()` returns `tuple[int, int]` (injected, skipped) instead of `int`; callers can now see how many cookies were filtered
+- `inject_cookies_to_nodriver()` logs a warning when all cookies are filtered (indicates the session may not work)
 - Chrome sandbox disabled by default for NoDriver; `--no-sandbox` warning suppressed
 - Auto-detect Chrome version for matching ChromeDriver
 
