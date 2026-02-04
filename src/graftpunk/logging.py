@@ -100,12 +100,19 @@ def enable_network_debug() -> None:
         handler = logging.StreamHandler(sys.stderr)
         handler.setFormatter(logging.Formatter("%(name)s %(levelname)s: %(message)s"))
         root.addHandler(handler)
-    root.setLevel(min(root.level or logging.DEBUG, logging.DEBUG))
+    root.setLevel(logging.DEBUG)
 
-    for logger_name in ("urllib3", "httpx", "httpcore"):
+    network_loggers = ("urllib3", "httpx", "httpcore")
+    for logger_name in network_loggers:
         log = logging.getLogger(logger_name)
         log.setLevel(logging.DEBUG)
         log.propagate = True
+
+    structlog.get_logger().info(
+        "network_debug_enabled",
+        loggers=network_loggers,
+        http_client_debuglevel=1,
+    )
 
 
 def get_logger(name: str | None = None) -> structlog.BoundLogger:
