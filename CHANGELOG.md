@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Interactive Observe Mode**: Record browser sessions interactively with `gp observe interactive`
+  - Opens authenticated browser at a URL, records all network traffic while you click around
+  - Press Ctrl+C to stop and save HAR files, screenshots, page source, and console logs
+  - Also available as `gp observe go --interactive` (`-i`) flag on existing command
+  - Captures response bodies eagerly via CDP `LoadingFinished` events (prevents buffer eviction)
+
+- **EAFP Token Injection**: Optimistic token injection with 403 retry
+  - Cached tokens are injected even when expired — if the server rejects with 403, tokens are refreshed and the request retried once
+  - Tokens extracted during login are persisted through session serialization (pickle roundtrip)
+  - `update_session_cookies()` preserves the token cache when saving session changes
+
+- **Token Polling with Retry**: Robust token extraction from dynamic pages
+  - `_poll_for_tokens()` checks page content up to 6 times (0.5s intervals) for token patterns
+  - Handles bot challenges (e.g., Akamai) and lazy-rendered pages without wasting time on fast ones
+  - Checks content first, sleeps only between retries (no unconditional initial delay)
+
+- **Login-Time Token Extraction**: Extract tokens during login without a separate browser launch
+  - Nodriver and Selenium login engines extract tokens from the already-open browser session
+  - Cookie-based and page-based token sources both supported during login
+  - `_build_token_cache()` shared helper eliminates duplication between backends
+
+- **Eager CDP Body Fetching**: Response bodies captured before Chrome evicts them
+  - `NodriverCaptureBackend` listens for `Network.LoadingFinished` CDP events
+  - Bodies fetched immediately via `Network.getResponseBody` and streamed to disk
+  - Async capture with `start_capture_async()` / `stop_capture_async()` for interactive mode
+
 - **Plugin Interface v1**: Full command framework for building CLI tools on top of authenticated sessions
   - `SitePlugin` base class with `@command` decorator for defining CLI commands
   - `CommandContext` dataclass injected into handlers with session, plugin metadata, and observability

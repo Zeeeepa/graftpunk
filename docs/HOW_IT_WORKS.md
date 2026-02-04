@@ -74,7 +74,7 @@ The context manager handles:
 - Flushing observability data (screenshots, HAR, console logs) on exit — each flush step is isolated so one failure doesn't prevent others
 - Browser cleanup (quit/stop) on exit
 
-**Serialization:** `BrowserSession` implements `__getstate__` to strip browser-related state (driver handles, async loops) before pickling. The nodriver backend serializes only HTTP client state (cookies, headers, session name) — browser driver handles are excluded; the selenium backend delegates to `requests.Session.__getstate__`.
+**Serialization:** `BrowserSession` implements `__getstate__` to strip browser-related state (driver handles, async loops) before pickling. The nodriver backend serializes only HTTP client state (cookies, headers, session name) — browser driver handles are excluded; the selenium backend delegates to `requests.Session.__getstate__`. Both backends preserve `_gp_cached_tokens` (token cache) and `_gp_header_profiles` (browser header profiles) through the pickle roundtrip.
 
 ---
 
@@ -437,7 +437,7 @@ The `build_observe_context()` factory function creates the appropriate context b
 Capture backends implement the `CaptureBackend` protocol and collect browser data:
 
 - **SeleniumCaptureBackend** — Screenshots via `get_screenshot_as_png()`, console logs via `get_log("browser")`, HAR data via `get_log("performance")`. All Selenium calls catch `WebDriverException` specifically (not bare `Exception`), logging errors without crashing the session.
-- **NodriverCaptureBackend** — Limited sync capture (screenshots require async, returns `None`). Console logs and HAR entries return empty lists.
+- **NodriverCaptureBackend** — Full async capture via CDP events. Listens for `Network.LoadingFinished` to eagerly fetch response bodies before Chrome's CDP buffer evicts them. Bodies are streamed to disk (configurable `max_body_size`). Supports `start_capture_async()` / `stop_capture_async()` for interactive mode, and sync `start_capture()` / `stop_capture()` for standard use.
 
 The `create_capture_backend()` factory validates the backend type and creates the appropriate backend instance.
 
@@ -476,9 +476,11 @@ Each step has its own error handling — a failure in one (e.g., HAR collection 
 ### CLI Commands
 
 ```bash
-gp observe list              # List all observability runs
-gp observe show <session>    # Show run details (file list, sizes)
-gp observe clean [session]   # Remove observability data
+gp observe list                          # List all observability runs
+gp observe show <session>                # Show run details (file list, sizes)
+gp observe clean [session]               # Remove observability data
+gp observe -s <session> go <url>         # Automated capture (waits --wait seconds)
+gp observe -s <session> interactive <url> # Interactive capture (Ctrl+C to stop)
 ```
 
 ---
@@ -511,12 +513,39 @@ Token sources:
 - **`response_header`** — Extract from a response header
 - **`page`** — Fetch a page and extract via regex pattern
 
-### Auto-Injection and Retry
+### EAFP Injection and 403 Retry
+
+Token injection follows an EAFP (Easier to Ask Forgiveness than Permission) strategy:
+
+1. Cached tokens are injected into request headers **even if expired** — the server is the arbiter of validity
+2. If the server responds with 403, the token cache is cleared, tokens are re-extracted, and the request is retried once
+3. This avoids unnecessary token refreshes when the server still accepts a technically-expired token
+
+### Token Cache Persistence
+
+Tokens extracted during login are persisted through the session serialization lifecycle:
+
+- `BrowserSession.__getstate__` includes the `_gp_cached_tokens` attribute when serializing
+- `BrowserSession.__setstate__` restores it on deserialization, defaulting to an empty dict if absent
+- `update_session_cookies()` preserves the token cache when saving session changes back to the cache
+- `load_session_for_api()` copies cached tokens from the stored `BrowserSession` to the `GraftpunkSession`
+
+### Login-Time Token Extraction
+
+When a plugin has both `login_config` and `token_config`, tokens are extracted during the login flow using the already-open browser session. This avoids launching a separate browser instance for token extraction:
+
+- **Nodriver**: `_extract_and_cache_tokens_nodriver()` navigates the existing tab to token pages and extracts via regex polling
+- **Selenium**: `_extract_and_cache_tokens_selenium()` uses the existing driver to navigate and extract
+
+Both backends use `_build_token_cache()` to construct `CachedToken` instances from extracted values. Token extraction during login is best-effort — failures are logged but don't prevent session caching.
+
+### Auto-Injection (Standard Flow)
 
 When a plugin has `token_config`, the command executor:
-1. Extracts all configured tokens before each command
-2. Injects them into request headers automatically
-3. On 403 responses, refreshes tokens and retries once
+1. Checks the token cache for each token (injecting even if expired — EAFP)
+2. Extracts missing tokens via HTTP or browser (two-phase: HTTP first, then batch browser extraction for failures)
+3. Injects all tokens into request headers
+4. On 403 responses, clears the cache, re-extracts, and retries once
 
 ---
 
@@ -551,6 +580,33 @@ This:
 5. Stores everything in `~/.local/share/graftpunk/observe/`
 
 Useful for debugging API interactions and discovering undocumented endpoints.
+
+### Interactive Mode (`gp observe interactive`)
+
+Interactive mode keeps the browser open for manual exploration while recording all network traffic:
+
+```bash
+gp observe -s mybank interactive https://secure.mybank.com/dashboard
+
+# Or as a flag on observe go:
+gp observe -s mybank go --interactive https://secure.mybank.com/dashboard
+```
+
+This:
+1. Loads cookies and injects them into a visible browser
+2. Navigates to the starting URL
+3. Records all network traffic (with response bodies fetched eagerly via CDP)
+4. Blocks until you press Ctrl+C
+5. Saves HAR data, a final screenshot, page source, and console logs
+
+The `--interactive` flag on `observe go` delegates to the same implementation — `--wait` is ignored when interactive mode is active.
+
+Saved artifacts:
+- `network.har` — Full HAR file with request/response bodies
+- `screenshots/` — Final screenshot at time of Ctrl+C
+- `page-source.html` — Page HTML at time of Ctrl+C
+- `console.jsonl` — Browser console log entries
+- `bodies/` — Raw response bodies streamed to disk during capture
 
 ---
 
@@ -767,7 +823,11 @@ This creates: `gp bank accounts list`, `gp bank accounts detail <id>`, `gp bank 
 | `NoOpObservabilityContext` | `observe.context` | No | Null object for disabled observability |
 | `CaptureBackend` | `observe.capture` | N/A (Protocol) | Protocol for browser capture |
 | `ObserveStorage` | `observe.storage` | No | File-based observability storage |
+| `GraftpunkSession` | `session` | No | `requests.Session` subclass with browser header profiles |
 | `BrowserSession` | `session` | No | Browser automation wrapper |
+| `Token` | `tokens` | Yes | Token extraction configuration |
+| `TokenConfig` | `tokens` | Yes | Collection of token extraction rules |
+| `CachedToken` | `tokens` | Yes | Extracted token value with TTL |
 | `PluginDiscoveryError` | `cli.plugin_commands` | Yes | Error during plugin discovery |
 | `YAMLDiscoveryError` | `plugins.yaml_loader` | Yes | Error during YAML plugin loading |
 | `PythonDiscoveryError` | `plugins.python_loader` | Yes | Error during Python plugin loading |
