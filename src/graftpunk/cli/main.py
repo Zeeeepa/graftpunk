@@ -28,6 +28,7 @@ from graftpunk.plugins import (
     discover_keepalive_handlers,
     discover_site_plugins,
     discover_storage_backends,
+    infer_site_name,
 )
 from graftpunk.plugins.yaml_plugin import create_yaml_plugins
 from graftpunk.session_context import resolve_session
@@ -319,24 +320,29 @@ def observe_clean(
         console.print("[green]Removed all observe data[/green]")
 
 
-def _resolve_observe_namespace(ctx: typer.Context, url: str) -> str:
-    """Resolve the observe storage namespace from context or URL.
+def _resolve_observe_context(ctx: typer.Context, url: str) -> tuple[str, str | None]:
+    """Resolve observe namespace and session name from context.
 
-    When --no-session is set, infers a name from the URL.
-    Otherwise, requires a session name from --session / env / active session.
+    Returns:
+        Tuple of (namespace, session_name). ``session_name`` is ``None``
+        when ``--no-session`` is set or no session is available.
+
+    Raises:
+        typer.Exit: If no session is specified and ``--no-session`` is not set.
     """
     obj = ctx.ensure_object(dict)
-    session_name = obj.get("observe_session")
     no_session = obj.get("observe_no_session", False)
+    session_name: str | None = None if no_session else obj.get("observe_session")
 
     if session_name:
-        return session_name
+        return session_name, session_name
 
     if no_session:
-        from graftpunk.plugins import infer_site_name
-
         inferred = infer_site_name(url)
-        return inferred or "unknown"
+        if not inferred:
+            LOG.warning("namespace_inference_failed", url=url, fallback="unknown")
+            inferred = "unknown"
+        return inferred, None
 
     # No session and no --no-session: require a session (original behavior)
     console.print(
@@ -373,9 +379,7 @@ def observe_go(
 
     Use --no-session to open the browser without cookies.
     """
-    namespace = _resolve_observe_namespace(ctx, url)
-    obj = ctx.ensure_object(dict)
-    session_name = None if obj.get("observe_no_session") else obj.get("observe_session")
+    namespace, session_name = _resolve_observe_context(ctx, url)
 
     if interactive:
         from graftpunk.logging import suppress_asyncio_noise
@@ -591,9 +595,7 @@ def observe_interactive(
 
     Use --no-session to open the browser without cookies.
     """
-    namespace = _resolve_observe_namespace(ctx, url)
-    obj = ctx.ensure_object(dict)
-    session_name = None if obj.get("observe_no_session") else obj.get("observe_session")
+    namespace, session_name = _resolve_observe_context(ctx, url)
 
     from graftpunk.logging import suppress_asyncio_noise
 
