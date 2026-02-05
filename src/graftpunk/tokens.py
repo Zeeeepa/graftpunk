@@ -428,7 +428,7 @@ _CACHE_ATTR = "_gp_cached_tokens"
 _CSRF_TOKENS_ATTR = "_gp_csrf_tokens"
 
 
-def _inject_csrf_token(session: requests.Session, name: str, value: str) -> None:
+def _store_csrf_token(session: requests.Session, name: str, value: str) -> None:
     """Store a CSRF token for method-scoped injection in prepare_request().
 
     Tokens are stored on a separate session attribute rather than
@@ -478,7 +478,7 @@ def prepare_session(
         if cached:
             # EAFP: inject even if expired — if the server rejects with 403,
             # the retry path in plugin_commands clears cache and re-extracts
-            _inject_csrf_token(session, token.name, cached.value)
+            _store_csrf_token(session, token.name, cached.value)
             if cached.is_expired:
                 LOG.debug("token_injecting_expired", name=token.name)
             continue
@@ -491,7 +491,7 @@ def prepare_session(
                 extracted_at=time.time(),
                 ttl=token.cache_duration,
             )
-            _inject_csrf_token(session, token.name, value)
+            _store_csrf_token(session, token.name, value)
             LOG.info("token_extracted", name=token.name, source=token.source)
         except _BrowserExtractionNeeded:
             LOG.info("token_needs_browser", name=token.name, source=token.source)
@@ -515,7 +515,7 @@ def prepare_session(
                 extracted_at=time.time(),
                 ttl=token.cache_duration,
             )
-            _inject_csrf_token(session, token.name, value)
+            _store_csrf_token(session, token.name, value)
 
     setattr(session, _CACHE_ATTR, cache)
     return session
