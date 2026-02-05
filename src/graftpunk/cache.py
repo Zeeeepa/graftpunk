@@ -405,7 +405,7 @@ def load_session_for_api(name: str) -> requests.Session:
         LOG.debug("copied_cached_tokens_from_session", count=len(token_cache))
 
     csrf_tokens = getattr(browser_session, _CSRF_TOKENS_ATTR, None)
-    if csrf_tokens:
+    if csrf_tokens is not None:
         setattr(api_session, _CSRF_TOKENS_ATTR, dict(csrf_tokens))
         LOG.debug("copied_csrf_tokens_from_session", count=len(csrf_tokens))
 
@@ -449,7 +449,7 @@ def update_session_cookies(api_session: requests.Session, session_name: str) -> 
             setattr(original, _CACHE_ATTR, token_cache)
         csrf_tokens = getattr(api_session, _CSRF_TOKENS_ATTR, None)
         if csrf_tokens is not None:
-            setattr(original, _CSRF_TOKENS_ATTR, csrf_tokens)
+            setattr(original, _CSRF_TOKENS_ATTR, dict(csrf_tokens))
         cache_session(original, session_name)
         LOG.info("session_cookies_updated", session_name=session_name)
     except Exception as exc:  # noqa: BLE001 — best-effort save

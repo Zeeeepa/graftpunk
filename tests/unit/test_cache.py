@@ -743,6 +743,25 @@ class TestLoadSessionForApiGraftpunkSession:
         # Should be a copy, not the same dict
         assert result is not csrf_tokens
 
+    def test_load_session_for_api_copies_empty_csrf_tokens(self, monkeypatch):
+        """Empty CSRF tokens dict is still copied (attribute exists on api_session)."""
+        import requests
+
+        from graftpunk.tokens import _CSRF_TOKENS_ATTR
+
+        mock_session = MagicMock()
+        mock_session.cookies = requests.cookies.RequestsCookieJar()
+        mock_session.headers = {"User-Agent": "test"}
+        mock_session._gp_header_profiles = {}
+        del mock_session._gp_cached_tokens
+
+        setattr(mock_session, _CSRF_TOKENS_ATTR, {})
+        monkeypatch.setattr("graftpunk.cache.load_session", lambda name: mock_session)
+
+        api_session = load_session_for_api("empty-csrf")
+        result = getattr(api_session, _CSRF_TOKENS_ATTR, None)
+        assert result == {}
+
 
 class TestListSessionsWithMetadata:
     """Tests for list_sessions_with_metadata function."""
@@ -974,4 +993,7 @@ class TestUpdateSessionCookies:
         ):
             update_session_cookies(api_session, "testsession")
 
-        assert getattr(cached_session, _CSRF_TOKENS_ATTR) == csrf_tokens
+        result = getattr(cached_session, _CSRF_TOKENS_ATTR)
+        assert result == csrf_tokens
+        # Must be a copy to prevent aliasing between sessions
+        assert result is not csrf_tokens
