@@ -3617,3 +3617,42 @@ class TestClickKwargsPassthrough:
         plugin = _make_minimal_plugin()
         with pytest.raises(PluginError, match="Invalid click_kwargs for argument 'bad'"):
             _create_plugin_command(plugin, spec)
+
+    def test_command_hidden_via_click_kwargs(self) -> None:
+        """hidden=True in CommandSpec.click_kwargs reaches the TyperCommand."""
+        from graftpunk.cli.plugin_commands import _create_plugin_command
+
+        spec = CommandSpec(
+            name="secret",
+            handler=lambda ctx: None,
+            click_kwargs={"help": "Secret command", "hidden": True},
+        )
+        plugin = _make_minimal_plugin()
+        cmd = _create_plugin_command(plugin, spec)
+        assert cmd.hidden is True
+
+    def test_command_deprecated_via_click_kwargs(self) -> None:
+        """deprecated=True in CommandSpec.click_kwargs reaches the TyperCommand."""
+        from graftpunk.cli.plugin_commands import _create_plugin_command
+
+        spec = CommandSpec(
+            name="old-cmd",
+            handler=lambda ctx: None,
+            click_kwargs={"help": "Old command", "deprecated": True},
+        )
+        plugin = _make_minimal_plugin()
+        cmd = _create_plugin_command(plugin, spec)
+        assert cmd.deprecated is True
+
+    def test_command_epilog_via_click_kwargs(self) -> None:
+        """epilog in CommandSpec.click_kwargs reaches the TyperCommand."""
+        from graftpunk.cli.plugin_commands import _create_plugin_command
+
+        spec = CommandSpec(
+            name="test-cmd",
+            handler=lambda ctx: None,
+            click_kwargs={"help": "Test", "epilog": "See docs for more info."},
+        )
+        plugin = _make_minimal_plugin()
+        cmd = _create_plugin_command(plugin, spec)
+        assert cmd.epilog == "See docs for more info."

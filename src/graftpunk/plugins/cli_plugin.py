@@ -248,11 +248,10 @@ class CommandResult:
 class CommandSpec:
     """Specification for a single CLI command.
 
-    ``click_kwargs`` is used to forward command-level Click metadata
-    (currently only ``help``).  Per-parameter Click kwargs are stored
-    on each :class:`PluginParamSpec` in the ``params`` tuple and are
-    splatted directly into ``click.Option()`` / ``click.Argument()``
-    at registration time.
+    ``click_kwargs`` is splatted into ``TyperCommand()`` at registration
+    time, supporting ``help``, ``hidden``, ``deprecated``, ``epilog``,
+    ``short_help``, and other Click command kwargs.  Per-parameter Click
+    kwargs are stored on each :class:`PluginParamSpec` in ``params``.
     """
 
     name: str
