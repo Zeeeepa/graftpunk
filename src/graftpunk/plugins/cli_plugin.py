@@ -164,8 +164,8 @@ class CommandMetadata:
 
     @property
     def help_text(self) -> str:
-        """Backward-compatible access to help text via click_kwargs."""
-        return self.click_kwargs.get("help", "")
+        """Convenience accessor for ``click_kwargs["help"]``."""
+        return self.click_kwargs.get("help") or ""
 
 
 @dataclass
@@ -246,8 +246,8 @@ class CommandSpec:
 
     @property
     def help_text(self) -> str:
-        """Backward-compatible access to help text via click_kwargs."""
-        return self.click_kwargs.get("help", "")
+        """Convenience accessor for ``click_kwargs["help"]``."""
+        return self.click_kwargs.get("help") or ""
 
 
 @dataclass(frozen=True)
