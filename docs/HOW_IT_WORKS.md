@@ -331,10 +331,11 @@ class MyPlugin(SitePlugin):
         submit="button[type=submit]",
         failure="Invalid credentials",  # Text that appears on failure
         success=".dashboard",           # CSS selector present on success
+        wait_for="#login-form",         # Wait for this element before filling fields
     )
 ```
 
-`LoginConfig` is a frozen dataclass that enforces the all-or-nothing invariant: `url`, `fields`, and `submit` are all required. `failure` and `success` are optional validation hints.
+`LoginConfig` is a frozen dataclass that enforces the all-or-nothing invariant: `url`, `fields`, and `submit` are all required and validated for non-empty/non-whitespace content. `failure` and `success` are optional validation hints. `wait_for` is an optional CSS selector for pre-interaction waits.
 
 For ergonomics, flat class attributes (`login_url`, `login_fields`, `login_submit`) are also supported — `SitePlugin.__init_subclass__` auto-constructs a `LoginConfig` and assigns it to `login_config`:
 
@@ -353,14 +354,19 @@ login:
 
 The declarative engine:
 1. Opens the browser to `{base_url}{login.url}`
-2. Clicks each field element, then types the credential value
-3. Clicks the submit button
-4. Waits for the page to settle
-5. Checks for failure text in page content
-6. Checks for success element via CSS selector
-7. Transfers cookies and caches the session
+2. **(If `wait_for` is set)** Waits for the specified CSS selector to appear before proceeding. This is useful when the login URL triggers a redirect (e.g., Azure AD B2C, Okta) or the form renders asynchronously (SPAs). Raises `PluginError` if the element doesn't appear within the timeout.
+3. Clicks each field element, then types the credential value
+4. Clicks the submit button
+5. Waits for the page to settle
+6. Checks for failure text in page content
+7. Checks for success element via CSS selector
+8. Transfers cookies and caches the session
 
 Both `failure` and `success` checks run independently — you can use either or both. If neither is configured, a warning is logged advising you to add validation.
+
+**Resilient element selection (nodriver):** During page transitions (cross-origin redirects, SPA navigation), the DOM document node itself can become invalid, causing nodriver's `tab.select()` to throw a `ProtocolException` instead of returning `None`. The login engine wraps all pre-submit element selection calls with a retry helper (`_select_with_retry`) that catches `ProtocolException` and retries with a 30-second deadline and 1-second intervals. This gives the browser time to complete redirects and render the form. The success selector check post-submit does *not* retry — by that point the page has settled, and retrying would mask genuine login failures.
+
+**`wait_for` is nodriver-only.** Setting `wait_for` on a plugin with `backend = "selenium"` raises a `PluginError` at login time with guidance to switch to the nodriver backend.
 
 **Backend differences in success detection:**
 - **Selenium:** Uses `driver.find_element()` with a try/except for `NoSuchElementException`
