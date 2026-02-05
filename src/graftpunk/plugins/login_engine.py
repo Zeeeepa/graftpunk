@@ -71,6 +71,13 @@ async def _select_with_retry(
             if element is not None:
                 return element
         except ProtocolException as exc:
+            if last_exc is None:
+                LOG.info(
+                    "login_element_retry_started",
+                    selector=selector,
+                    timeout=f"{timeout:.1f}s",
+                    hint="Page may be redirecting; retrying element selection",
+                )
             last_exc = exc
             LOG.debug(
                 "login_element_retry",
@@ -84,6 +91,7 @@ async def _select_with_retry(
 
     if last_exc is not None:
         raise last_exc
+    LOG.debug("login_element_not_found", selector=selector, timeout=f"{timeout:.1f}s")
     return None
 
 
