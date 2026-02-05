@@ -29,9 +29,7 @@ _BROWSER_IDENTITY_HEADERS: Final[frozenset[str]] = frozenset(
 # HTTP methods that trigger CSRF token injection.  Browsers only enforce
 # CSRF protection for state-changing operations; read-only methods (GET,
 # HEAD, OPTIONS) never carry tokens.
-_MUTATION_METHODS: Final[frozenset[str]] = frozenset(
-    {"POST", "PUT", "PATCH", "DELETE"}
-)
+_MUTATION_METHODS: Final[frozenset[str]] = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 _CANONICAL_HTML_ACCEPT: Final[str] = (
     "text/html,application/xhtml+xml,application/xml;"
