@@ -343,6 +343,23 @@ class TestClearCachedTokens:
         clear_cached_tokens(session)
         assert session._gp_cached_tokens == {}  # type: ignore[attr-defined]
 
+    def test_clears_csrf_tokens(self) -> None:
+        session = requests.Session()
+        session._gp_csrf_tokens = {"X-CSRF": "secret"}  # type: ignore[attr-defined]
+
+        clear_cached_tokens(session)
+        assert session._gp_csrf_tokens == {}  # type: ignore[attr-defined]
+
+    def test_clears_both_cache_and_csrf_tokens(self) -> None:
+        session = requests.Session()
+        cached = CachedToken(name="X-CSRF", value="val", extracted_at=time.time(), ttl=300)
+        session._gp_cached_tokens = {"X-CSRF": cached}  # type: ignore[attr-defined]
+        session._gp_csrf_tokens = {"X-CSRF": "secret"}  # type: ignore[attr-defined]
+
+        clear_cached_tokens(session)
+        assert session._gp_cached_tokens == {}  # type: ignore[attr-defined]
+        assert session._gp_csrf_tokens == {}  # type: ignore[attr-defined]
+
     def test_no_cache_no_error(self) -> None:
         session = requests.Session()
         # Should not raise
