@@ -33,7 +33,7 @@ class MockPlugin(SitePlugin):
 
     @command(
         help="Get item by ID",
-        params=[PluginParamSpec(name="item_id", param_type=int, required=True, is_option=False)],
+        params=[PluginParamSpec.argument("item_id", type=int, required=True)],
     )
     def item(self, ctx: Any, item_id: int) -> dict[str, int]:
         return {"id": item_id}
@@ -3418,3 +3418,104 @@ class TestSessionPersistence:
 
             assert result.exit_code == 1
             mock_update.assert_not_called()
+
+
+def _make_minimal_plugin() -> MagicMock:
+    """Create a minimal mock plugin for testing _create_plugin_command."""
+    plugin = MagicMock()
+    plugin.site_name = "test-plugin"
+    plugin.session_name = "test-plugin"
+    plugin.requires_session = True
+    plugin.api_version = 1
+    plugin.backend = "selenium"
+    plugin.base_url = ""
+    plugin.help_text = "Test plugin"
+    plugin.token_config = None
+    return plugin
+
+
+class TestClickKwargsPassthrough:
+    """Verify click_kwargs pass straight through to Click params."""
+
+    def test_option_show_default_passes_through(self) -> None:
+        """show_default in click_kwargs reaches the Click Option."""
+        from graftpunk.cli.plugin_commands import _create_plugin_command
+
+        param = PluginParamSpec.option(
+            "count",
+            type=int,
+            default=5,
+            click_kwargs={"show_default": True},
+        )
+        spec = CommandSpec(
+            name="test-cmd",
+            handler=lambda ctx: None,
+            params=(param,),
+        )
+        plugin = _make_minimal_plugin()
+        cmd = _create_plugin_command(plugin, spec)
+        count_param = next(p for p in cmd.params if getattr(p, "name", "") == "count")
+        assert count_param.show_default is True
+
+    def test_option_envvar_passes_through(self) -> None:
+        """envvar in click_kwargs reaches the Click Option."""
+        from graftpunk.cli.plugin_commands import _create_plugin_command
+
+        param = PluginParamSpec.option(
+            "token",
+            type=str,
+            click_kwargs={"envvar": "MY_TOKEN"},
+        )
+        spec = CommandSpec(
+            name="test-cmd",
+            handler=lambda ctx: None,
+            params=(param,),
+        )
+        plugin = _make_minimal_plugin()
+        cmd = _create_plugin_command(plugin, spec)
+        token_param = next(p for p in cmd.params if getattr(p, "name", "") == "token")
+        assert token_param.envvar == "MY_TOKEN"
+
+    def test_argument_nargs_passes_through(self) -> None:
+        """nargs in click_kwargs reaches the Click Argument."""
+        from graftpunk.cli.plugin_commands import _create_plugin_command
+
+        param = PluginParamSpec.argument(
+            "files",
+            type=str,
+            click_kwargs={"nargs": -1},
+        )
+        spec = CommandSpec(
+            name="test-cmd",
+            handler=lambda ctx: None,
+            params=(param,),
+        )
+        plugin = _make_minimal_plugin()
+        cmd = _create_plugin_command(plugin, spec)
+        files_param = next(p for p in cmd.params if getattr(p, "name", "") == "files")
+        assert files_param.nargs == -1
+
+    def test_command_help_from_click_kwargs(self) -> None:
+        """Command help text comes from CommandSpec.click_kwargs['help']."""
+        from graftpunk.cli.plugin_commands import _create_plugin_command
+
+        spec = CommandSpec(
+            name="test-cmd",
+            handler=lambda ctx: None,
+            click_kwargs={"help": "My custom help"},
+        )
+        plugin = _make_minimal_plugin()
+        cmd = _create_plugin_command(plugin, spec)
+        assert cmd.help == "My custom help"
+
+    def test_command_default_help_when_no_click_kwargs(self) -> None:
+        """When no help in click_kwargs, default 'Run X command' is used."""
+        from graftpunk.cli.plugin_commands import _create_plugin_command
+
+        spec = CommandSpec(
+            name="test-cmd",
+            handler=lambda ctx: None,
+        )
+        plugin = _make_minimal_plugin()
+        cmd = _create_plugin_command(plugin, spec)
+        assert cmd.help == "Run test-cmd command"
