@@ -1262,6 +1262,38 @@ class TestSelectWithRetry:
         # Only called once — no retry for non-protocol errors
         mock_tab.select.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_zero_timeout_raises(self) -> None:
+        """Raises ValueError when timeout is zero."""
+        from graftpunk.plugins.login_engine import _select_with_retry
+
+        with pytest.raises(ValueError, match="timeout must be positive"):
+            await _select_with_retry(AsyncMock(), "input", timeout=0)
+
+    @pytest.mark.asyncio
+    async def test_negative_timeout_raises(self) -> None:
+        """Raises ValueError when timeout is negative."""
+        from graftpunk.plugins.login_engine import _select_with_retry
+
+        with pytest.raises(ValueError, match="timeout must be positive"):
+            await _select_with_retry(AsyncMock(), "input", timeout=-1)
+
+    @pytest.mark.asyncio
+    async def test_zero_interval_raises(self) -> None:
+        """Raises ValueError when interval is zero."""
+        from graftpunk.plugins.login_engine import _select_with_retry
+
+        with pytest.raises(ValueError, match="interval must be positive"):
+            await _select_with_retry(AsyncMock(), "input", interval=0)
+
+    @pytest.mark.asyncio
+    async def test_negative_interval_raises(self) -> None:
+        """Raises ValueError when interval is negative."""
+        from graftpunk.plugins.login_engine import _select_with_retry
+
+        with pytest.raises(ValueError, match="interval must be positive"):
+            await _select_with_retry(AsyncMock(), "input", interval=-1)
+
 
 class TestLoginRetryIntegration:
     """Tests for _select_with_retry integration in the login flow."""

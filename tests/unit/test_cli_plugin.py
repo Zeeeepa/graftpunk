@@ -58,6 +58,26 @@ class TestLoginConfig:
         with pytest.raises(ValueError, match="submit must be non-empty"):
             LoginConfig(url="/login", fields={"u": "#u"}, submit="")
 
+    def test_whitespace_url_raises(self) -> None:
+        """LoginConfig rejects whitespace-only url."""
+        with pytest.raises(ValueError, match="url must be non-empty"):
+            LoginConfig(url="   ", fields={"u": "#u"}, submit="#b")
+
+    def test_whitespace_submit_raises(self) -> None:
+        """LoginConfig rejects whitespace-only submit."""
+        with pytest.raises(ValueError, match="submit must be non-empty"):
+            LoginConfig(url="/login", fields={"u": "#u"}, submit="  \t  ")
+
+    def test_whitespace_wait_for_raises(self) -> None:
+        """LoginConfig rejects whitespace-only wait_for."""
+        with pytest.raises(ValueError, match="wait_for must not be whitespace-only"):
+            LoginConfig(url="/login", fields={"u": "#u"}, submit="#b", wait_for="   ")
+
+    def test_whitespace_field_selector_raises(self) -> None:
+        """LoginConfig rejects whitespace-only field selectors."""
+        with pytest.raises(ValueError, match="fields\\['u'\\] selector must be non-empty"):
+            LoginConfig(url="/login", fields={"u": "  "}, submit="#b")
+
     def test_wait_for_default_empty(self) -> None:
         """LoginConfig.wait_for defaults to empty string."""
         cfg = LoginConfig(url="/login", fields={"u": "#u"}, submit="#b")
