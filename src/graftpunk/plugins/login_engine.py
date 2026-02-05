@@ -46,15 +46,20 @@ async def _select_with_retry(
     Args:
         tab: nodriver tab instance.
         selector: CSS selector string.
-        timeout: Total seconds to wait before giving up.
-        interval: Seconds between retry attempts.
+        timeout: Total seconds to wait before giving up (must be positive).
+        interval: Seconds between retry attempts (must be positive).
 
     Returns:
         The matched element, or None if not found within timeout.
 
     Raises:
+        ValueError: If timeout or interval are not positive.
         ProtocolException: If timeout expires and last failure was a protocol error.
     """
+    if timeout <= 0:
+        raise ValueError(f"timeout must be positive, got {timeout}")
+    if interval <= 0:
+        raise ValueError(f"interval must be positive, got {interval}")
     from nodriver.core.connection import ProtocolException
 
     loop = asyncio.get_running_loop()
