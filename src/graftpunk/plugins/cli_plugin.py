@@ -105,6 +105,11 @@ class PluginParamSpec:
         Returns:
             A new PluginParamSpec configured as a Click option.
         """
+        if required and default is not None:
+            raise ValueError(
+                f"PluginParamSpec.option({name!r}): required=True conflicts with "
+                f"default={default!r}. A required option cannot have a default value."
+            )
         kw: dict[str, Any] = {"type": type, "required": required, "default": default}
         if help:
             kw["help"] = help
@@ -137,6 +142,11 @@ class PluginParamSpec:
         Returns:
             A new PluginParamSpec configured as a Click argument.
         """
+        if required and default is not None:
+            raise ValueError(
+                f"PluginParamSpec.argument({name!r}): required=True conflicts with "
+                f"default={default!r}. A required argument cannot have a default value."
+            )
         kw: dict[str, Any] = {"type": type, "required": required, "default": default}
         if click_kwargs:
             kw.update(click_kwargs)
