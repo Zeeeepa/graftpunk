@@ -563,6 +563,19 @@ class TestConvertParamsClickKwargs:
         params = _convert_params(cmd_def)
         assert params[0].click_kwargs.get("is_flag") is True
 
+    def test_float_param_converts(self) -> None:
+        """YAML type 'float' maps to Python float."""
+        cmd_def = YAMLCommandDef(
+            name="test",
+            help_text="",
+            method="GET",
+            url="/test",
+            params=(YAMLParamDef(name="threshold", type="float", default=0.5),),
+        )
+        params = _convert_params(cmd_def)
+        assert params[0].click_kwargs["type"] is float
+        assert params[0].click_kwargs["default"] == 0.5
+
     def test_help_in_click_kwargs(self) -> None:
         cmd_def = YAMLCommandDef(
             name="test",
