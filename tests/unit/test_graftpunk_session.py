@@ -768,51 +768,23 @@ class TestExplicitMethodIntegration:
 class TestCsrfTokenInjection:
     """Test that CSRF tokens are only injected on mutation methods."""
 
-    def _session_with_csrf(self):
+    def _session_with_csrf(self) -> GraftpunkSession:
         """Create a GraftpunkSession with CSRF tokens stored."""
         session = GraftpunkSession(header_profiles=SAMPLE_PROFILES)
         session._gp_csrf_tokens = {"X-CSRF-Token": "secret123"}
         return session
 
-    def test_csrf_injected_on_post(self):
+    @pytest.mark.parametrize("method", ["POST", "PUT", "PATCH", "DELETE"])
+    def test_csrf_injected_on_mutation_methods(self, method):
         session = self._session_with_csrf()
-        req = requests.Request("POST", "https://example.com/api", json={"key": "val"})
+        req = requests.Request(method, "https://example.com/api", json={"key": "val"})
         prepared = session.prepare_request(req)
         assert prepared.headers["X-CSRF-Token"] == "secret123"
 
-    def test_csrf_injected_on_put(self):
+    @pytest.mark.parametrize("method", ["GET", "HEAD", "OPTIONS"])
+    def test_csrf_not_injected_on_safe_methods(self, method):
         session = self._session_with_csrf()
-        req = requests.Request("PUT", "https://example.com/api/1", json={"key": "val"})
-        prepared = session.prepare_request(req)
-        assert prepared.headers["X-CSRF-Token"] == "secret123"
-
-    def test_csrf_injected_on_patch(self):
-        session = self._session_with_csrf()
-        req = requests.Request("PATCH", "https://example.com/api/1", json={"key": "val"})
-        prepared = session.prepare_request(req)
-        assert prepared.headers["X-CSRF-Token"] == "secret123"
-
-    def test_csrf_injected_on_delete(self):
-        session = self._session_with_csrf()
-        req = requests.Request("DELETE", "https://example.com/api/1")
-        prepared = session.prepare_request(req)
-        assert prepared.headers["X-CSRF-Token"] == "secret123"
-
-    def test_csrf_not_injected_on_get(self):
-        session = self._session_with_csrf()
-        req = requests.Request("GET", "https://example.com/page")
-        prepared = session.prepare_request(req)
-        assert "X-CSRF-Token" not in prepared.headers
-
-    def test_csrf_not_injected_on_head(self):
-        session = self._session_with_csrf()
-        req = requests.Request("HEAD", "https://example.com/page")
-        prepared = session.prepare_request(req)
-        assert "X-CSRF-Token" not in prepared.headers
-
-    def test_csrf_not_injected_on_options(self):
-        session = self._session_with_csrf()
-        req = requests.Request("OPTIONS", "https://example.com/page")
+        req = requests.Request(method, "https://example.com/page")
         prepared = session.prepare_request(req)
         assert "X-CSRF-Token" not in prepared.headers
 
@@ -848,3 +820,13 @@ class TestCsrfTokenInjection:
         req = requests.Request("GET", "https://example.com/page")
         prepared = session.prepare_request(req)
         assert "X-CSRF-Token" not in prepared.headers
+
+    def test_csrf_injected_through_profile_matched_path(self):
+        """CSRF tokens appear alongside profile headers on mutation requests."""
+        session = self._session_with_csrf()
+        req = requests.Request("POST", "https://example.com/api", json={"key": "val"})
+        prepared = session.prepare_request(req)
+        # CSRF token injected
+        assert prepared.headers["X-CSRF-Token"] == "secret123"
+        # XHR profile headers also present (POST+json → xhr profile)
+        assert prepared.headers.get("X-Requested-With") == "XMLHttpRequest"

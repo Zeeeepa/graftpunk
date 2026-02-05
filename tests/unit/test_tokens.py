@@ -12,6 +12,7 @@ from graftpunk.tokens import (
     CachedToken,
     Token,
     TokenConfig,
+    _inject_csrf_token,
     clear_cached_tokens,
     extract_token,
     prepare_session,
@@ -364,6 +365,28 @@ class TestClearCachedTokens:
         session = requests.Session()
         # Should not raise
         clear_cached_tokens(session)
+
+
+class TestInjectCsrfToken:
+    """Tests for _inject_csrf_token function."""
+
+    def test_creates_attribute_on_first_call(self) -> None:
+        session = requests.Session()
+        assert not hasattr(session, "_gp_csrf_tokens")
+        _inject_csrf_token(session, "X-CSRF", "secret")
+        assert session._gp_csrf_tokens == {"X-CSRF": "secret"}  # type: ignore[attr-defined]
+
+    def test_overwrites_existing_key(self) -> None:
+        session = requests.Session()
+        _inject_csrf_token(session, "X-CSRF", "old")
+        _inject_csrf_token(session, "X-CSRF", "new")
+        assert session._gp_csrf_tokens == {"X-CSRF": "new"}  # type: ignore[attr-defined]
+
+    def test_adds_new_key(self) -> None:
+        session = requests.Session()
+        _inject_csrf_token(session, "X-CSRF", "val1")
+        _inject_csrf_token(session, "X-Token", "val2")
+        assert session._gp_csrf_tokens == {"X-CSRF": "val1", "X-Token": "val2"}  # type: ignore[attr-defined]
 
 
 class TestExtractTokenExtractionField:
