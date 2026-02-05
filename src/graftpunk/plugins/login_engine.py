@@ -286,11 +286,21 @@ def _generate_nodriver_login(plugin: SitePlugin) -> Any:
             )
             await _header_capture.start_capture_async()
 
+            # Wait for a specific element before interacting (e.g., redirect targets)
+            wait_for_selector = plugin.login_config.wait_for
+            if wait_for_selector:
+                wait_el = await _select_with_retry(tab, wait_for_selector)
+                if wait_el is None:
+                    raise PluginError(
+                        f"Timed out waiting for '{wait_for_selector}' to appear. "
+                        f"The page may not have loaded or redirected as expected."
+                    )
+
             # Fill fields (click before send_keys to prevent keystroke loss)
             for field_name, selector in fields.items():
                 value = credentials.get(field_name, "")
                 try:
-                    element = await tab.select(selector)
+                    element = await _select_with_retry(tab, selector)
                     if element is None:
                         raise PluginError(
                             f"Login field '{field_name}' not found using selector '{selector}'. "
@@ -307,7 +317,7 @@ def _generate_nodriver_login(plugin: SitePlugin) -> Any:
 
             # Click submit
             try:
-                submit = await tab.select(submit_selector)
+                submit = await _select_with_retry(tab, submit_selector)
                 if submit is None:
                     raise PluginError(
                         f"Submit button not found using selector '{submit_selector}'. "
