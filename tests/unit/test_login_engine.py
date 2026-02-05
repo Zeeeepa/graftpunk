@@ -545,7 +545,7 @@ class TestNodriverLoginValidationPaths:
         mock_tab.get_content = AsyncMock(return_value="<html>Welcome</html>")
 
         # select succeeds for form fields, returns None for success selector (timeout)
-        async def select_side_effect(selector: str) -> AsyncMock | None:
+        async def select_side_effect(selector: str, **kwargs: object) -> AsyncMock | None:
             if selector == ".dashboard":
                 return None
             return mock_element
@@ -600,7 +600,7 @@ class TestNodriverLoginValidationPaths:
         mock_tab.get_content = AsyncMock(return_value="<html>Welcome</html>")
 
         # select succeeds for form fields, raises unknown error for success selector
-        async def select_side_effect(selector: str) -> AsyncMock:
+        async def select_side_effect(selector: str, **kwargs: object) -> AsyncMock:
             if selector == ".dashboard":
                 raise ConnectionError("WebDriver session crashed")
             return mock_element
@@ -1245,3 +1245,160 @@ class TestSelectWithRetry:
 
         # Only called once — no retry for non-protocol errors
         mock_tab.select.assert_called_once()
+
+
+class TestLoginRetryIntegration:
+    """Tests for _select_with_retry integration in the login flow."""
+
+    @pytest.mark.asyncio
+    async def test_login_retries_through_protocol_exception(self) -> None:
+        """Login succeeds when select fails transiently then recovers."""
+        from nodriver.core.connection import ProtocolException
+
+        from graftpunk.plugins.login_engine import generate_login_method
+
+        plugin = DeclarativeHN()
+        login_method = generate_login_method(plugin)
+
+        mock_tab = AsyncMock()
+        mock_element = AsyncMock()
+
+        # select() fails with ProtocolException on first call, succeeds after
+        exc = ProtocolException({"code": -32000, "message": "Could not find node"})
+        mock_tab.select = AsyncMock(side_effect=[exc, mock_element, mock_element, mock_element])
+        mock_tab.get_content = AsyncMock(return_value="<html>Welcome</html>")
+
+        mock_bs, instance = _make_nodriver_mock_bs()
+        instance.driver = MagicMock()
+        instance.driver.get = AsyncMock(return_value=mock_tab)
+        instance.transfer_nodriver_cookies_to_session = AsyncMock()
+
+        with (
+            patch("graftpunk.plugins.login_engine.BrowserSession", mock_bs),
+            patch("graftpunk.plugins.login_engine.cache_session"),
+            patch("graftpunk.plugins.login_engine.asyncio.sleep", new_callable=AsyncMock),
+        ):
+            result = await login_method({"username": "user", "password": "test"})  # noqa: S106
+
+        assert result is True
+
+
+class TestLoginWaitFor:
+    """Tests for LoginConfig.wait_for integration."""
+
+    @pytest.mark.asyncio
+    async def test_wait_for_called_before_fields(self) -> None:
+        """When wait_for is set, the selector is awaited before filling fields."""
+        from graftpunk.plugins.login_engine import generate_login_method
+
+        class WaitForPlugin(SitePlugin):
+            site_name = "waitfor"
+            session_name = "waitfor"
+            help_text = "WF"
+            base_url = "https://example.com"
+            backend = "nodriver"
+            login_config = LoginConfig(
+                url="/login",
+                fields={"username": "#user"},
+                submit="#btn",
+                wait_for="#login-form",
+            )
+
+        plugin = WaitForPlugin()
+        login_method = generate_login_method(plugin)
+
+        mock_tab = AsyncMock()
+        mock_element = AsyncMock()
+        select_calls: list[str] = []
+
+        async def tracking_select(selector: str, **kwargs: object) -> AsyncMock:
+            select_calls.append(selector)
+            return mock_element
+
+        mock_tab.select = tracking_select
+        mock_tab.get_content = AsyncMock(return_value="<html>OK</html>")
+
+        mock_bs, instance = _make_nodriver_mock_bs()
+        instance.driver = MagicMock()
+        instance.driver.get = AsyncMock(return_value=mock_tab)
+        instance.transfer_nodriver_cookies_to_session = AsyncMock()
+
+        with (
+            patch("graftpunk.plugins.login_engine.BrowserSession", mock_bs),
+            patch("graftpunk.plugins.login_engine.cache_session"),
+            patch("graftpunk.plugins.login_engine.asyncio.sleep", new_callable=AsyncMock),
+        ):
+            result = await login_method({"username": "user"})
+
+        assert result is True
+        # wait_for selector should be first
+        assert select_calls[0] == "#login-form"
+        # Then the field selector, then submit
+        assert "#user" in select_calls
+        assert "#btn" in select_calls
+
+    @pytest.mark.asyncio
+    async def test_wait_for_timeout_raises_plugin_error(self) -> None:
+        """When wait_for times out, raises PluginError."""
+        from graftpunk.plugins.login_engine import generate_login_method
+
+        class WaitForPlugin(SitePlugin):
+            site_name = "waitfor"
+            session_name = "waitfor"
+            help_text = "WF"
+            base_url = "https://example.com"
+            backend = "nodriver"
+            login_config = LoginConfig(
+                url="/login",
+                fields={"username": "#user"},
+                submit="#btn",
+                wait_for="#login-form",
+            )
+
+        plugin = WaitForPlugin()
+        login_method = generate_login_method(plugin)
+
+        mock_tab = AsyncMock()
+        # select always returns None (element never appears)
+        mock_tab.select = AsyncMock(return_value=None)
+
+        mock_bs, instance = _make_nodriver_mock_bs()
+        instance.driver = MagicMock()
+        instance.driver.get = AsyncMock(return_value=mock_tab)
+
+        with (
+            patch("graftpunk.plugins.login_engine.BrowserSession", mock_bs),
+            patch("graftpunk.plugins.login_engine.asyncio.sleep", new_callable=AsyncMock),
+            pytest.raises(PluginError, match="Timed out waiting for"),
+        ):
+            await login_method({"username": "user"})
+
+    @pytest.mark.asyncio
+    async def test_no_wait_for_skips_wait(self) -> None:
+        """When wait_for is empty, no extra select call is made."""
+        from graftpunk.plugins.login_engine import generate_login_method
+
+        plugin = DeclarativeHN()  # no wait_for
+        login_method = generate_login_method(plugin)
+
+        mock_tab = AsyncMock()
+        mock_element = AsyncMock()
+        mock_tab.select = AsyncMock(return_value=mock_element)
+        mock_tab.get_content = AsyncMock(return_value="<html>Welcome</html>")
+
+        mock_bs, instance = _make_nodriver_mock_bs()
+        instance.driver = MagicMock()
+        instance.driver.get = AsyncMock(return_value=mock_tab)
+        instance.transfer_nodriver_cookies_to_session = AsyncMock()
+
+        with (
+            patch("graftpunk.plugins.login_engine.BrowserSession", mock_bs),
+            patch("graftpunk.plugins.login_engine.cache_session"),
+            patch("graftpunk.plugins.login_engine.asyncio.sleep", new_callable=AsyncMock),
+        ):
+            result = await login_method({"username": "user", "password": "test"})  # noqa: S106
+
+        assert result is True
+        # select should NOT have been called with wait_for selector
+        for call in mock_tab.select.call_args_list:
+            assert call[0][0] != "#login-form"
