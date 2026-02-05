@@ -570,7 +570,12 @@ async def _run_observe_interactive(
             )
             return
 
-        console.print("\n[bold]Recording... press Ctrl+C to stop and save[/bold]\n")
+        console.print("\n[bold]Recording... press Ctrl+C to stop and save[/bold]")
+        console.print(
+            "[dim]Tip: Use Ctrl+C in this terminal for a complete capture "
+            "(screenshot, page source, and network data). "
+            "Closing the browser window will preserve network data only.[/dim]\n"
+        )
 
         try:
             await stop_event.wait()
