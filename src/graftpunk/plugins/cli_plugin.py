@@ -545,7 +545,7 @@ def command(
         else:
             # Function -> command (existing behavior + parent)
             click_kw: dict[str, Any] = {}
-            if help:  # noqa: A002
+            if help:
                 click_kw["help"] = help
             target._command_meta = CommandMetadata(
                 name=target.__name__,
