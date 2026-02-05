@@ -1584,6 +1584,106 @@ class TestNodriverHARCapture:
         # Should not raise
         await backend.stop_capture_async()
 
+    @pytest.mark.asyncio
+    async def test_stop_capture_async_bails_on_connection_death(self) -> None:
+        """stop_capture_async returns immediately on ConnectionRefusedError."""
+        mock_network = MagicMock()
+        mock_cdp = MagicMock()
+        mock_cdp.network = mock_network
+        mock_nodriver = MagicMock()
+        mock_nodriver.cdp = mock_cdp
+
+        browser = MagicMock()
+        tab = MagicMock()
+        tab.send = AsyncMock(side_effect=ConnectionRefusedError("[Errno 61] Connection refused"))
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "nodriver": mock_nodriver,
+                "nodriver.cdp": mock_cdp,
+                "nodriver.cdp.network": mock_network,
+            },
+        ):
+            backend = NodriverCaptureBackend(browser, get_tab=lambda: tab)
+            # Seed 3 requests — only the first should be attempted
+            for i in range(3):
+                backend._request_map[f"req-{i}"] = {
+                    "url": f"https://example.com/page{i}",
+                    "method": "GET",
+                    "headers": {},
+                    "post_data": None,
+                    "has_post_data": False,
+                    "timestamp": None,
+                    "response": {
+                        "status": 200,
+                        "statusText": "OK",
+                        "headers": {},
+                        "mimeType": "application/json",
+                    },
+                }
+
+            await backend.stop_capture_async()
+
+        # Should bail after first connection error, not try all 3
+        assert tab.send.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_stop_capture_async_bails_on_post_data_connection_death(self) -> None:
+        """stop_capture_async returns immediately on ConnectionError during post data fetch."""
+        mock_network = MagicMock()
+        mock_cdp = MagicMock()
+        mock_cdp.network = mock_network
+        mock_nodriver = MagicMock()
+        mock_nodriver.cdp = mock_cdp
+
+        browser = MagicMock()
+        tab = MagicMock()
+        tab.send = AsyncMock(side_effect=ConnectionError("browser died"))
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "nodriver": mock_nodriver,
+                "nodriver.cdp": mock_cdp,
+                "nodriver.cdp.network": mock_network,
+            },
+        ):
+            backend = NodriverCaptureBackend(browser, get_tab=lambda: tab)
+            backend._request_map["req-post"] = {
+                "url": "https://example.com/login",
+                "method": "POST",
+                "headers": {},
+                "post_data": None,
+                "has_post_data": True,
+                "timestamp": None,
+                "response": {
+                    "status": 200,
+                    "statusText": "OK",
+                    "headers": {},
+                    "mimeType": "application/json",
+                },
+            }
+            backend._request_map["req-get"] = {
+                "url": "https://example.com/api",
+                "method": "GET",
+                "headers": {},
+                "post_data": None,
+                "has_post_data": False,
+                "timestamp": None,
+                "response": {
+                    "status": 200,
+                    "statusText": "OK",
+                    "headers": {},
+                    "mimeType": "application/json",
+                },
+            }
+
+            await backend.stop_capture_async()
+
+        # Should bail after first post_data connection error
+        assert tab.send.call_count == 1
+
     def test_on_request_handles_exception_gracefully(self) -> None:
         browser = MagicMock()
         backend = NodriverCaptureBackend(browser)
