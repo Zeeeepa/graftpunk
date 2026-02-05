@@ -74,7 +74,17 @@ async def _select_with_retry(
             per_attempt = min(5.0, remaining)
             element = await tab.select(selector, timeout=per_attempt)
             if element is not None:
+                if last_exc is not None:
+                    LOG.info(
+                        "login_element_retry_recovered",
+                        selector=selector,
+                    )
                 return element
+            LOG.debug(
+                "login_element_select_returned_none",
+                selector=selector,
+                remaining=f"{remaining:.1f}s",
+            )
         except ProtocolException as exc:
             if last_exc is None:
                 LOG.info(
