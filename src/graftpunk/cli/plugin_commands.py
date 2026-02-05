@@ -36,6 +36,7 @@ from graftpunk.plugins.cli_plugin import (
     CLIPluginProtocol,
     CommandContext,
     CommandSpec,
+    PluginParamSpec,
 )
 from graftpunk.plugins.formatters import discover_formatters, format_output
 from graftpunk.plugins.python_loader import discover_python_plugins
@@ -235,20 +236,6 @@ def _execute_with_limits(
     raise last_exc
 
 
-def _map_param_type(param_type: type) -> type[Any]:
-    """Map Python types to Click-compatible types.
-
-    Args:
-        param_type: Python type to map.
-
-    Returns:
-        Click-compatible type (str, int, float, bool), defaulting to str.
-    """
-    if param_type in (str, int, float, bool):
-        return param_type
-    return str
-
-
 def _create_plugin_command(
     plugin: CLIPluginProtocol,
     cmd_spec: CommandSpec,
@@ -268,28 +255,11 @@ def _create_plugin_command(
     option_params = [p for p in cmd_spec.params if p.is_option]
 
     for param in positional_params:
-        click_type = _map_param_type(param.param_type)
-        params.append(
-            click.Argument(
-                [param.name],
-                type=click_type,
-                required=param.required,
-                default=param.default,
-            )
-        )
+        params.append(click.Argument([param.name], **param.click_kwargs))
 
     for param in option_params:
-        click_type = _map_param_type(param.param_type)
         option_name = f"--{param.name.replace('_', '-')}"
-        params.append(
-            click.Option(
-                [option_name],
-                type=click_type,
-                required=param.required,
-                default=param.default,
-                help=param.help_text,
-            )
-        )
+        params.append(click.Option([option_name], **param.click_kwargs))
 
     available_formats = list(discover_formatters().keys())
     params.append(
@@ -430,11 +400,12 @@ def _create_plugin_command(
             gp_console.error(f"Command failed: {exc}")
             raise SystemExit(1) from exc
 
+    help_text = cmd_spec.click_kwargs.get("help", "") or f"Run {cmd_spec.name} command"
     return typer.core.TyperCommand(
         name=cmd_spec.name,
         callback=callback,
         params=params,
-        help=cmd_spec.help_text or f"Run {cmd_spec.name} command",
+        help=help_text,
     )
 
 
