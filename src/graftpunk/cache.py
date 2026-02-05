@@ -396,13 +396,18 @@ def load_session_for_api(name: str) -> requests.Session:
             api_session.headers[key] = value
         LOG.debug("copied_headers_from_session")
 
-    # Copy cached tokens from browser session
-    from graftpunk.tokens import _CACHE_ATTR
+    # Copy cached tokens and CSRF tokens from browser session
+    from graftpunk.tokens import _CACHE_ATTR, _CSRF_TOKENS_ATTR
 
     token_cache = getattr(browser_session, _CACHE_ATTR, None)
     if token_cache:
         setattr(api_session, _CACHE_ATTR, token_cache)
         LOG.debug("copied_cached_tokens_from_session", count=len(token_cache))
+
+    csrf_tokens = getattr(browser_session, _CSRF_TOKENS_ATTR, None)
+    if csrf_tokens:
+        setattr(api_session, _CSRF_TOKENS_ATTR, dict(csrf_tokens))
+        LOG.debug("copied_csrf_tokens_from_session", count=len(csrf_tokens))
 
     LOG.info(
         "created_api_session_from_cached_session",
@@ -435,13 +440,16 @@ def update_session_cookies(api_session: requests.Session, session_name: str) -> 
         return
 
     try:
-        from graftpunk.tokens import _CACHE_ATTR
+        from graftpunk.tokens import _CACHE_ATTR, _CSRF_TOKENS_ATTR
 
         original.cookies.update(api_session.cookies)
-        # Persist token cache from working session
+        # Persist token cache and CSRF tokens from working session
         token_cache = getattr(api_session, _CACHE_ATTR, None)
         if token_cache is not None:
             setattr(original, _CACHE_ATTR, token_cache)
+        csrf_tokens = getattr(api_session, _CSRF_TOKENS_ATTR, None)
+        if csrf_tokens is not None:
+            setattr(original, _CSRF_TOKENS_ATTR, csrf_tokens)
         cache_session(original, session_name)
         LOG.info("session_cookies_updated", session_name=session_name)
     except Exception as exc:  # noqa: BLE001 — best-effort save

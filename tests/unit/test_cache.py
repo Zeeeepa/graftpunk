@@ -713,12 +713,35 @@ class TestLoadSessionForApiGraftpunkSession:
         mock_session._gp_header_profiles = {}
         # No _gp_cached_tokens attribute
         del mock_session._gp_cached_tokens
+        del mock_session._gp_csrf_tokens
         monkeypatch.setattr("graftpunk.cache.load_session", lambda name: mock_session)
 
         api_session = load_session_for_api("no-cache-session")
         from graftpunk.tokens import _CACHE_ATTR
 
         assert not hasattr(api_session, _CACHE_ATTR)
+
+    def test_load_session_for_api_copies_csrf_tokens(self, monkeypatch):
+        """CSRF tokens are transferred from browser session to API session."""
+        import requests
+
+        from graftpunk.tokens import _CSRF_TOKENS_ATTR
+
+        mock_session = MagicMock()
+        mock_session.cookies = requests.cookies.RequestsCookieJar()
+        mock_session.headers = {"User-Agent": "test"}
+        mock_session._gp_header_profiles = {}
+        del mock_session._gp_cached_tokens
+
+        csrf_tokens = {"X-CSRF": "secret123", "X-Token": "abc"}
+        setattr(mock_session, _CSRF_TOKENS_ATTR, csrf_tokens)
+        monkeypatch.setattr("graftpunk.cache.load_session", lambda name: mock_session)
+
+        api_session = load_session_for_api("csrf-session")
+        result = getattr(api_session, _CSRF_TOKENS_ATTR, None)
+        assert result == csrf_tokens
+        # Should be a copy, not the same dict
+        assert result is not csrf_tokens
 
 
 class TestListSessionsWithMetadata:
@@ -931,3 +954,24 @@ class TestUpdateSessionCookies:
         mock_cache.assert_called_once_with(cached_session, "testsession")
         # Verify token cache was transferred to the original session
         assert getattr(cached_session, _CACHE_ATTR) == token_cache
+
+    def test_update_session_cookies_persists_csrf_tokens(self) -> None:
+        """CSRF tokens survive update_session_cookies round-trip."""
+        import requests
+
+        from graftpunk.tokens import _CSRF_TOKENS_ATTR
+
+        cached_session = MagicMock()
+        cached_session.cookies = requests.cookies.RequestsCookieJar()
+
+        api_session = requests.Session()
+        csrf_tokens = {"X-CSRF": "secret123"}
+        setattr(api_session, _CSRF_TOKENS_ATTR, csrf_tokens)
+
+        with (
+            patch("graftpunk.cache.load_session", return_value=cached_session),
+            patch("graftpunk.cache.cache_session"),
+        ):
+            update_session_cookies(api_session, "testsession")
+
+        assert getattr(cached_session, _CSRF_TOKENS_ATTR) == csrf_tokens
