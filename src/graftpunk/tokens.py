@@ -525,3 +525,5 @@ def clear_cached_tokens(session: requests.Session) -> None:
     """Clear all cached tokens from a session (e.g. for retry after 403)."""
     if hasattr(session, _CACHE_ATTR):
         getattr(session, _CACHE_ATTR).clear()
+    if hasattr(session, _CSRF_TOKENS_ATTR):
+        getattr(session, _CSRF_TOKENS_ATTR).clear()
