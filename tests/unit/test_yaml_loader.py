@@ -946,6 +946,14 @@ class TestYAMLOutputConfig:
         assert config is not None
         assert config.views[0].columns is None
 
+    def test_parse_output_config_empty_views(self) -> None:
+        """Test parsing output_config with empty views list."""
+        from graftpunk.plugins.yaml_loader import _parse_output_config
+
+        config = _parse_output_config({"views": []})
+        assert config is not None
+        assert config.views == []
+
     def test_yaml_command_with_output_config(self, tmp_path: Path) -> None:
         """Test that YAML command includes output_config in parsed result."""
         yaml_content = """
