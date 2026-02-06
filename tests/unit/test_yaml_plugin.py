@@ -650,3 +650,142 @@ class TestConvertParamsClickKwargs:
         plugin = create_yaml_site_plugin(config, [cmd])
         spec = plugin.get_commands()[0]
         assert spec.click_kwargs == {}
+
+
+class TestHandlerOutputConfig:
+    """Tests for output_config handling in the handler."""
+
+    def test_output_config_returns_command_result(self) -> None:
+        """When output_config is set, handler returns CommandResult."""
+        from graftpunk.plugins.cli_plugin import CommandResult
+        from graftpunk.plugins.output_config import ColumnFilter, OutputConfig, ViewConfig
+
+        output_config = OutputConfig(
+            views=[
+                ViewConfig(
+                    name="items",
+                    path="results",
+                    columns=ColumnFilter(mode="include", columns=["id", "name"]),
+                )
+            ]
+        )
+        cmd = YAMLCommandDef(
+            name="test",
+            help_text="",
+            method="GET",
+            url="/test",
+            output_config=output_config,
+        )
+        config = _make_config()
+        plugin = create_yaml_site_plugin(config, [cmd])
+        handler = {c.name: c for c in plugin.get_commands()}["test"].handler
+
+        session = MagicMock(spec=requests.Session)
+        session.request.return_value = _mock_response(json_data={"results": [{"id": 1, "name": "foo"}]})
+        ctx = _mock_ctx(session)
+
+        result = handler(ctx)
+
+        assert isinstance(result, CommandResult)
+        assert result.data == {"results": [{"id": 1, "name": "foo"}]}
+        assert result.output_config is output_config
+
+    def test_no_output_config_returns_raw_data(self) -> None:
+        """When output_config is not set, handler returns raw data."""
+        from graftpunk.plugins.cli_plugin import CommandResult
+
+        cmd = YAMLCommandDef(
+            name="test",
+            help_text="",
+            method="GET",
+            url="/test",
+            output_config=None,
+        )
+        config = _make_config()
+        plugin = create_yaml_site_plugin(config, [cmd])
+        handler = {c.name: c for c in plugin.get_commands()}["test"].handler
+
+        session = MagicMock(spec=requests.Session)
+        session.request.return_value = _mock_response(json_data={"items": [1, 2, 3]})
+        ctx = _mock_ctx(session)
+
+        result = handler(ctx)
+
+        assert not isinstance(result, CommandResult)
+        assert result == {"items": [1, 2, 3]}
+
+    def test_output_config_with_jmespath(self) -> None:
+        """When both jmespath and output_config are set, jmespath is applied first."""
+        from graftpunk.plugins.cli_plugin import CommandResult
+        from graftpunk.plugins.output_config import ColumnFilter, OutputConfig, ViewConfig
+
+        output_config = OutputConfig(
+            views=[ViewConfig(name="items", columns=ColumnFilter(mode="include", columns=["id"]))]
+        )
+        cmd = YAMLCommandDef(
+            name="test",
+            help_text="",
+            method="GET",
+            url="/test",
+            jmespath="data.items",
+            output_config=output_config,
+        )
+        config = _make_config()
+        plugin = create_yaml_site_plugin(config, [cmd])
+        handler = {c.name: c for c in plugin.get_commands()}["test"].handler
+
+        session = MagicMock(spec=requests.Session)
+        session.request.return_value = _mock_response(
+            json_data={"data": {"items": [{"id": 1}, {"id": 2}]}}
+        )
+        ctx = _mock_ctx(session)
+
+        mock_jmespath = MagicMock()
+        mock_jmespath.search.return_value = [{"id": 1}, {"id": 2}]
+
+        with (
+            patch("graftpunk.plugins.yaml_plugin.HAS_JMESPATH", True),
+            patch("graftpunk.plugins.yaml_plugin._jmespath", mock_jmespath),
+        ):
+            result = handler(ctx)
+
+        assert isinstance(result, CommandResult)
+        assert result.data == [{"id": 1}, {"id": 2}]
+        assert result.output_config is output_config
+
+    def test_output_config_with_jmespath_not_installed(self) -> None:
+        """When jmespath not installed but output_config set, returns CommandResult with raw data."""
+        from graftpunk.plugins.cli_plugin import CommandResult
+        from graftpunk.plugins.output_config import ColumnFilter, OutputConfig, ViewConfig
+
+        output_config = OutputConfig(
+            views=[ViewConfig(name="items", columns=ColumnFilter(mode="include", columns=["id"]))]
+        )
+        cmd = YAMLCommandDef(
+            name="test",
+            help_text="",
+            method="GET",
+            url="/test",
+            jmespath="data.items",
+            output_config=output_config,
+        )
+        config = _make_config()
+        plugin = create_yaml_site_plugin(config, [cmd])
+        handler = {c.name: c for c in plugin.get_commands()}["test"].handler
+
+        session = MagicMock(spec=requests.Session)
+        session.request.return_value = _mock_response(
+            json_data={"data": {"items": [{"id": 1}]}}
+        )
+        ctx = _mock_ctx(session)
+
+        with (
+            patch("graftpunk.plugins.yaml_plugin.HAS_JMESPATH", False),
+            patch("graftpunk.plugins.yaml_plugin.gp_console"),
+        ):
+            result = handler(ctx)
+
+        # Even though jmespath couldn't be applied, output_config still wraps result
+        assert isinstance(result, CommandResult)
+        assert result.data == {"data": {"items": [{"id": 1}]}}
+        assert result.output_config is output_config

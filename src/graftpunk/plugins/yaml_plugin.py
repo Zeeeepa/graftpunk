@@ -17,6 +17,7 @@ from graftpunk.exceptions import PluginError
 from graftpunk.logging import get_logger
 from graftpunk.plugins.cli_plugin import (
     CommandContext,
+    CommandResult,
     CommandSpec,
     PluginConfig,
     PluginParamSpec,
@@ -169,9 +170,15 @@ def _create_handler(
                 gp_console.warn(
                     "jmespath filter ignored (install with: pip install 'graftpunk[jmespath]')"
                 )
+                if cmd_def.output_config:
+                    return CommandResult(data=data, output_config=cmd_def.output_config)
                 return data
             assert _jmespath is not None
             data = _jmespath.search(cmd_def.jmespath, data)
+
+        # Return with output_config if specified
+        if cmd_def.output_config:
+            return CommandResult(data=data, output_config=cmd_def.output_config)
 
         return data
 
