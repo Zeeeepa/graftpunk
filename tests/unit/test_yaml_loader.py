@@ -847,3 +847,173 @@ commands:
 
         config, commands, headers = parse_yaml_plugin(yaml_file)
         assert config.token_config is None
+
+
+class TestYAMLOutputConfig:
+    """Tests for YAML output_config parsing."""
+
+    def test_parse_output_config_none(self) -> None:
+        """Test that None input returns None."""
+        from graftpunk.plugins.yaml_loader import _parse_output_config
+
+        assert _parse_output_config(None) is None
+
+    def test_parse_output_config_simple_column_list(self) -> None:
+        """Test parsing output_config with simple column list (shorthand)."""
+        from graftpunk.plugins.yaml_loader import _parse_output_config
+
+        config = _parse_output_config({
+            "views": [
+                {"name": "items", "path": "results.items", "columns": ["id", "name"]}
+            ]
+        })
+        assert config is not None
+        assert len(config.views) == 1
+        assert config.views[0].name == "items"
+        assert config.views[0].path == "results.items"
+        assert config.views[0].columns is not None
+        assert config.views[0].columns.mode == "include"
+        assert config.views[0].columns.columns == ["id", "name"]
+
+    def test_parse_output_config_explicit_include_mode(self) -> None:
+        """Test parsing output_config with explicit include mode."""
+        from graftpunk.plugins.yaml_loader import _parse_output_config
+
+        config = _parse_output_config({
+            "views": [
+                {
+                    "name": "items",
+                    "columns": {"mode": "include", "columns": ["id", "name", "price"]}
+                }
+            ]
+        })
+        assert config is not None
+        assert config.views[0].columns is not None
+        assert config.views[0].columns.mode == "include"
+        assert config.views[0].columns.columns == ["id", "name", "price"]
+
+    def test_parse_output_config_exclude_mode(self) -> None:
+        """Test parsing output_config with exclude mode."""
+        from graftpunk.plugins.yaml_loader import _parse_output_config
+
+        config = _parse_output_config({
+            "views": [
+                {
+                    "name": "items",
+                    "columns": {"mode": "exclude", "columns": ["description", "metadata"]}
+                }
+            ]
+        })
+        assert config is not None
+        assert config.views[0].columns is not None
+        assert config.views[0].columns.mode == "exclude"
+        assert config.views[0].columns.columns == ["description", "metadata"]
+
+    def test_parse_output_config_default_view(self) -> None:
+        """Test parsing output_config with default_view."""
+        from graftpunk.plugins.yaml_loader import _parse_output_config
+
+        config = _parse_output_config({
+            "default_view": "summary",
+            "views": [
+                {"name": "summary", "columns": ["id", "name"]},
+                {"name": "full", "columns": ["id", "name", "description"]}
+            ]
+        })
+        assert config is not None
+        assert config.default_view == "summary"
+        assert len(config.views) == 2
+
+    def test_parse_output_config_view_with_title(self) -> None:
+        """Test parsing output_config with view title."""
+        from graftpunk.plugins.yaml_loader import _parse_output_config
+
+        config = _parse_output_config({
+            "views": [
+                {"name": "items", "title": "Search Results", "columns": ["id", "name"]}
+            ]
+        })
+        assert config is not None
+        assert config.views[0].title == "Search Results"
+
+    def test_parse_output_config_no_columns(self) -> None:
+        """Test parsing output_config with view without columns."""
+        from graftpunk.plugins.yaml_loader import _parse_output_config
+
+        config = _parse_output_config({
+            "views": [
+                {"name": "items", "path": "results"}
+            ]
+        })
+        assert config is not None
+        assert config.views[0].columns is None
+
+    def test_yaml_command_with_output_config(self, tmp_path: Path) -> None:
+        """Test that YAML command includes output_config in parsed result."""
+        yaml_content = """
+site_name: testsite
+base_url: https://api.example.com
+commands:
+  search:
+    url: /api/search
+    output_config:
+      views:
+        - name: items
+          path: results.items
+          columns: [id, name, price]
+"""
+        yaml_file = tmp_path / "test.yaml"
+        yaml_file.write_text(yaml_content)
+
+        config, commands, headers = parse_yaml_plugin(yaml_file)
+
+        assert len(commands) == 1
+        cmd = commands[0]
+        assert cmd.name == "search"
+        assert cmd.output_config is not None
+        assert len(cmd.output_config.views) == 1
+        assert cmd.output_config.views[0].name == "items"
+        assert cmd.output_config.views[0].path == "results.items"
+        assert cmd.output_config.views[0].columns is not None
+        assert cmd.output_config.views[0].columns.columns == ["id", "name", "price"]
+
+    def test_yaml_command_with_explicit_exclude_mode(self, tmp_path: Path) -> None:
+        """Test YAML command with explicit exclude mode in output_config."""
+        yaml_content = """
+site_name: testsite
+base_url: https://api.example.com
+commands:
+  list:
+    url: /api/items
+    output_config:
+      views:
+        - name: items
+          columns:
+            mode: exclude
+            columns: [internal_id, metadata]
+"""
+        yaml_file = tmp_path / "test.yaml"
+        yaml_file.write_text(yaml_content)
+
+        config, commands, headers = parse_yaml_plugin(yaml_file)
+
+        assert commands[0].output_config is not None
+        assert commands[0].output_config.views[0].columns is not None
+        assert commands[0].output_config.views[0].columns.mode == "exclude"
+        assert commands[0].output_config.views[0].columns.columns == ["internal_id", "metadata"]
+
+    def test_yaml_command_without_output_config(self, tmp_path: Path) -> None:
+        """Test that YAML command without output_config has None."""
+        yaml_content = """
+site_name: testsite
+base_url: https://api.example.com
+commands:
+  ping:
+    url: /api/ping
+"""
+        yaml_file = tmp_path / "test.yaml"
+        yaml_file.write_text(yaml_content)
+
+        config, commands, headers = parse_yaml_plugin(yaml_file)
+
+        assert commands[0].output_config is None

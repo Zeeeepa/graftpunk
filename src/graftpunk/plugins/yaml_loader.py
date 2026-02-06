@@ -23,6 +23,7 @@ from graftpunk.config import get_settings
 from graftpunk.exceptions import PluginError
 from graftpunk.logging import get_logger
 from graftpunk.plugins.cli_plugin import LoginConfig, LoginStep
+from graftpunk.plugins.output_config import ColumnFilter, OutputConfig, ViewConfig
 from graftpunk.tokens import Token, TokenConfig
 
 LOG = get_logger(__name__)
@@ -65,6 +66,7 @@ class YAMLCommandDef:
     timeout: float | None = None
     max_retries: int = 0
     rate_limit: float | None = None
+    output_config: OutputConfig | None = None
 
     def __post_init__(self) -> None:
         if not self.name:
@@ -142,6 +144,50 @@ def expand_env_vars(value: str) -> str:
         return var_value
 
     return ENV_VAR_PATTERN.sub(replacer, value)
+
+
+def _parse_output_config(config_dict: dict[str, Any] | None) -> OutputConfig | None:
+    """Parse output_config from YAML dict to OutputConfig dataclass.
+
+    Supports shorthand column syntax (list of column names) and explicit
+    mode syntax (dict with mode and columns).
+
+    Args:
+        config_dict: The output_config dict from YAML, or None.
+
+    Returns:
+        OutputConfig instance or None if config_dict is None.
+    """
+    if config_dict is None:
+        return None
+
+    views = []
+    for view_dict in config_dict.get("views", []):
+        columns = None
+        if "columns" in view_dict:
+            cols = view_dict["columns"]
+            if isinstance(cols, list):
+                # Shorthand: just a list means include mode
+                columns = ColumnFilter(mode="include", columns=cols)
+            elif isinstance(cols, dict):
+                columns = ColumnFilter(
+                    mode=cols.get("mode", "include"),
+                    columns=cols.get("columns", []),
+                )
+
+        views.append(
+            ViewConfig(
+                name=view_dict.get("name", "default"),
+                path=view_dict.get("path", ""),
+                title=view_dict.get("title", ""),
+                columns=columns,
+            )
+        )
+
+    return OutputConfig(
+        views=views,
+        default_view=config_dict.get("default_view", ""),
+    )
 
 
 def validate_yaml_schema(data: dict[str, Any], filepath: Path) -> None:
@@ -288,6 +334,7 @@ def parse_yaml_plugin(
                 timeout=cmd_def.get("timeout"),
                 max_retries=cmd_def.get("max_retries", 0),
                 rate_limit=cmd_def.get("rate_limit"),
+                output_config=_parse_output_config(cmd_def.get("output_config")),
             )
         )
 
