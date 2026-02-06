@@ -42,6 +42,16 @@ from graftpunk.plugins.formatters import (
     OutputFormatter,
     discover_formatters,
 )
+from graftpunk.plugins.output_config import (
+    ColumnDisplayConfig,
+    ColumnFilter,
+    OutputConfig,
+    ViewConfig,
+    apply_column_filter,
+    auto_detect_columns,
+    extract_view_data,
+    parse_view_arg,
+)
 from graftpunk.plugins.python_loader import (
     PythonDiscoveryError,
     PythonDiscoveryResult,
@@ -72,6 +82,15 @@ __all__ = [
     # Formatters
     "OutputFormatter",
     "discover_formatters",
+    # Output configuration
+    "ColumnDisplayConfig",
+    "ColumnFilter",
+    "OutputConfig",
+    "ViewConfig",
+    "apply_column_filter",
+    "auto_detect_columns",
+    "extract_view_data",
+    "parse_view_arg",
     # Exceptions
     "CommandError",
     # Utilities
