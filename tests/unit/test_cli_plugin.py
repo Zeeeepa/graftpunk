@@ -1474,7 +1474,7 @@ class TestCommandResultOutputConfig:
     """Tests for output_config field on CommandResult."""
 
     def test_command_result_accepts_output_config(self) -> None:
-        from graftpunk.plugins import OutputConfig, ViewConfig, ColumnFilter
+        from graftpunk.plugins import ColumnFilter, OutputConfig, ViewConfig
         from graftpunk.plugins.cli_plugin import CommandResult
 
         cfg = OutputConfig(

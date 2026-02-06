@@ -681,7 +681,9 @@ class TestHandlerOutputConfig:
         handler = {c.name: c for c in plugin.get_commands()}["test"].handler
 
         session = MagicMock(spec=requests.Session)
-        session.request.return_value = _mock_response(json_data={"results": [{"id": 1, "name": "foo"}]})
+        session.request.return_value = _mock_response(
+            json_data={"results": [{"id": 1, "name": "foo"}]}
+        )
         ctx = _mock_ctx(session)
 
         result = handler(ctx)
@@ -754,7 +756,7 @@ class TestHandlerOutputConfig:
         assert result.output_config is output_config
 
     def test_output_config_with_jmespath_not_installed(self) -> None:
-        """When jmespath not installed but output_config set, returns CommandResult with raw data."""
+        """When jmespath not installed, returns CommandResult with raw data."""
         from graftpunk.plugins.cli_plugin import CommandResult
         from graftpunk.plugins.output_config import ColumnFilter, OutputConfig, ViewConfig
 
@@ -774,9 +776,7 @@ class TestHandlerOutputConfig:
         handler = {c.name: c for c in plugin.get_commands()}["test"].handler
 
         session = MagicMock(spec=requests.Session)
-        session.request.return_value = _mock_response(
-            json_data={"data": {"items": [{"id": 1}]}}
-        )
+        session.request.return_value = _mock_response(json_data={"data": {"items": [{"id": 1}]}})
         ctx = _mock_ctx(session)
 
         with (

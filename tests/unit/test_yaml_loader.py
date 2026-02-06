@@ -862,11 +862,9 @@ class TestYAMLOutputConfig:
         """Test parsing output_config with simple column list (shorthand)."""
         from graftpunk.plugins.yaml_loader import _parse_output_config
 
-        config = _parse_output_config({
-            "views": [
-                {"name": "items", "path": "results.items", "columns": ["id", "name"]}
-            ]
-        })
+        config = _parse_output_config(
+            {"views": [{"name": "items", "path": "results.items", "columns": ["id", "name"]}]}
+        )
         assert config is not None
         assert len(config.views) == 1
         assert config.views[0].name == "items"
@@ -879,14 +877,16 @@ class TestYAMLOutputConfig:
         """Test parsing output_config with explicit include mode."""
         from graftpunk.plugins.yaml_loader import _parse_output_config
 
-        config = _parse_output_config({
-            "views": [
-                {
-                    "name": "items",
-                    "columns": {"mode": "include", "columns": ["id", "name", "price"]}
-                }
-            ]
-        })
+        config = _parse_output_config(
+            {
+                "views": [
+                    {
+                        "name": "items",
+                        "columns": {"mode": "include", "columns": ["id", "name", "price"]},
+                    }
+                ]
+            }
+        )
         assert config is not None
         assert config.views[0].columns is not None
         assert config.views[0].columns.mode == "include"
@@ -896,14 +896,16 @@ class TestYAMLOutputConfig:
         """Test parsing output_config with exclude mode."""
         from graftpunk.plugins.yaml_loader import _parse_output_config
 
-        config = _parse_output_config({
-            "views": [
-                {
-                    "name": "items",
-                    "columns": {"mode": "exclude", "columns": ["description", "metadata"]}
-                }
-            ]
-        })
+        config = _parse_output_config(
+            {
+                "views": [
+                    {
+                        "name": "items",
+                        "columns": {"mode": "exclude", "columns": ["description", "metadata"]},
+                    }
+                ]
+            }
+        )
         assert config is not None
         assert config.views[0].columns is not None
         assert config.views[0].columns.mode == "exclude"
@@ -913,13 +915,15 @@ class TestYAMLOutputConfig:
         """Test parsing output_config with default_view."""
         from graftpunk.plugins.yaml_loader import _parse_output_config
 
-        config = _parse_output_config({
-            "default_view": "summary",
-            "views": [
-                {"name": "summary", "columns": ["id", "name"]},
-                {"name": "full", "columns": ["id", "name", "description"]}
-            ]
-        })
+        config = _parse_output_config(
+            {
+                "default_view": "summary",
+                "views": [
+                    {"name": "summary", "columns": ["id", "name"]},
+                    {"name": "full", "columns": ["id", "name", "description"]},
+                ],
+            }
+        )
         assert config is not None
         assert config.default_view == "summary"
         assert len(config.views) == 2
@@ -928,11 +932,9 @@ class TestYAMLOutputConfig:
         """Test parsing output_config with view title."""
         from graftpunk.plugins.yaml_loader import _parse_output_config
 
-        config = _parse_output_config({
-            "views": [
-                {"name": "items", "title": "Search Results", "columns": ["id", "name"]}
-            ]
-        })
+        config = _parse_output_config(
+            {"views": [{"name": "items", "title": "Search Results", "columns": ["id", "name"]}]}
+        )
         assert config is not None
         assert config.views[0].title == "Search Results"
 
@@ -940,11 +942,7 @@ class TestYAMLOutputConfig:
         """Test parsing output_config with view without columns."""
         from graftpunk.plugins.yaml_loader import _parse_output_config
 
-        config = _parse_output_config({
-            "views": [
-                {"name": "items", "path": "results"}
-            ]
-        })
+        config = _parse_output_config({"views": [{"name": "items", "path": "results"}]})
         assert config is not None
         assert config.views[0].columns is None
 
