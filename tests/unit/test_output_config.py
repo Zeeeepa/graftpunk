@@ -1,0 +1,219 @@
+"""Tests for output configuration dataclasses."""
+
+import pytest
+
+from graftpunk.plugins.output_config import (
+    ColumnDisplayConfig,
+    ColumnFilter,
+    OutputConfig,
+    ViewConfig,
+    apply_column_filter,
+    auto_detect_columns,
+    extract_view_data,
+    parse_view_arg,
+)
+
+
+class TestColumnFilter:
+    def test_include_mode(self) -> None:
+        cf = ColumnFilter(mode="include", columns=["id", "name"])
+        assert cf.mode == "include"
+        assert cf.columns == ["id", "name"]
+
+    def test_exclude_mode(self) -> None:
+        cf = ColumnFilter(mode="exclude", columns=["description"])
+        assert cf.mode == "exclude"
+        assert cf.columns == ["description"]
+
+    def test_invalid_mode_rejected(self) -> None:
+        with pytest.raises(ValueError, match="mode must be"):
+            ColumnFilter(mode="invalid", columns=["id"])
+
+    def test_empty_columns_allowed(self) -> None:
+        cf = ColumnFilter(mode="include", columns=[])
+        assert cf.columns == []
+
+
+class TestColumnDisplayConfig:
+    def test_minimal_config(self) -> None:
+        cfg = ColumnDisplayConfig(name="id")
+        assert cfg.name == "id"
+        assert cfg.header == ""
+        assert cfg.max_width == 0
+        assert cfg.align == "left"
+
+    def test_full_config(self) -> None:
+        cfg = ColumnDisplayConfig(
+            name="price",
+            header="Price ($)",
+            max_width=10,
+            align="right",
+        )
+        assert cfg.name == "price"
+        assert cfg.header == "Price ($)"
+        assert cfg.max_width == 10
+        assert cfg.align == "right"
+
+    def test_invalid_align_rejected(self) -> None:
+        with pytest.raises(ValueError, match="align must be"):
+            ColumnDisplayConfig(name="id", align="middle")
+
+    def test_empty_name_rejected(self) -> None:
+        with pytest.raises(ValueError, match="name must be non-empty"):
+            ColumnDisplayConfig(name="")
+
+
+class TestViewConfig:
+    def test_minimal_view(self) -> None:
+        view = ViewConfig(name="items")
+        assert view.name == "items"
+        assert view.path == ""
+        assert view.title == ""
+        assert view.columns is None
+        assert view.display == []
+
+    def test_full_view(self) -> None:
+        view = ViewConfig(
+            name="items",
+            path="results.items",
+            title="Product Items",
+            columns=ColumnFilter("include", ["id", "name"]),
+            display=[ColumnDisplayConfig(name="id", header="ID")],
+        )
+        assert view.name == "items"
+        assert view.path == "results.items"
+        assert view.title == "Product Items"
+        assert view.columns is not None
+        assert view.columns.mode == "include"
+        assert len(view.display) == 1
+
+    def test_empty_name_rejected(self) -> None:
+        with pytest.raises(ValueError, match="name must be non-empty"):
+            ViewConfig(name="")
+
+
+class TestOutputConfig:
+    def test_empty_config(self) -> None:
+        cfg = OutputConfig()
+        assert cfg.views == []
+        assert cfg.default_view == ""
+
+    def test_single_view(self) -> None:
+        cfg = OutputConfig(
+            views=[ViewConfig(name="items", columns=ColumnFilter("include", ["id"]))],
+            default_view="items",
+        )
+        assert len(cfg.views) == 1
+        assert cfg.default_view == "items"
+
+    def test_multiple_views(self) -> None:
+        cfg = OutputConfig(
+            views=[
+                ViewConfig(name="items"),
+                ViewConfig(name="facets"),
+            ],
+            default_view="items",
+        )
+        assert len(cfg.views) == 2
+
+
+class TestParseViewArg:
+    def test_name_and_columns(self) -> None:
+        name, cols = parse_view_arg("items:id,name,brand")
+        assert name == "items"
+        assert cols == ["id", "name", "brand"]
+
+    def test_name_only(self) -> None:
+        name, cols = parse_view_arg("items")
+        assert name == "items"
+        assert cols == []
+
+    def test_columns_with_spaces(self) -> None:
+        name, cols = parse_view_arg("items:id, name, brand")
+        assert name == "items"
+        assert cols == ["id", "name", "brand"]
+
+    def test_empty_columns(self) -> None:
+        name, cols = parse_view_arg("items:")
+        assert name == "items"
+        assert cols == []
+
+
+class TestAutoDetectColumns:
+    def test_empty_list(self) -> None:
+        assert auto_detect_columns([]) == []
+
+    def test_prioritizes_id_name_title(self) -> None:
+        data = [{"description": "long", "id": "1", "name": "foo", "other": "x"}]
+        cols = auto_detect_columns(data, max_cols=3)
+        assert cols[:2] == ["id", "name"]
+
+    def test_deprioritizes_description(self) -> None:
+        data = [{"id": "1", "name": "foo", "description": "long text", "status": "ok"}]
+        cols = auto_detect_columns(data, max_cols=3)
+        assert "description" not in cols
+
+    def test_limits_to_max_cols(self) -> None:
+        data = [{"a": 1, "b": 2, "c": 3, "d": 4, "e": 5}]
+        cols = auto_detect_columns(data, max_cols=3)
+        assert len(cols) == 3
+
+    def test_samples_first_100_items(self) -> None:
+        data = [{"common": i} for i in range(150)]
+        data[0]["rare"] = "special"
+        cols = auto_detect_columns(data)
+        assert "common" in cols
+        assert "rare" in cols
+
+
+class TestApplyColumnFilter:
+    def test_include_mode(self) -> None:
+        data = [{"id": 1, "name": "foo", "desc": "long"}]
+        cf = ColumnFilter("include", ["id", "name"])
+        result = apply_column_filter(data, cf)
+        assert result == [{"id": 1, "name": "foo"}]
+
+    def test_exclude_mode(self) -> None:
+        data = [{"id": 1, "name": "foo", "desc": "long"}]
+        cf = ColumnFilter("exclude", ["desc"])
+        result = apply_column_filter(data, cf)
+        assert result == [{"id": 1, "name": "foo"}]
+
+    def test_preserves_order(self) -> None:
+        data = [{"c": 3, "b": 2, "a": 1}]
+        cf = ColumnFilter("include", ["a", "b"])
+        result = apply_column_filter(data, cf)
+        assert list(result[0].keys()) == ["a", "b"]
+
+    def test_missing_columns_ignored(self) -> None:
+        data = [{"id": 1, "name": "foo"}]
+        cf = ColumnFilter("include", ["id", "missing"])
+        result = apply_column_filter(data, cf)
+        assert result == [{"id": 1}]
+
+    def test_empty_filter_returns_original(self) -> None:
+        data = [{"id": 1, "name": "foo"}]
+        result = apply_column_filter(data, None)
+        assert result == data
+
+
+class TestExtractViewData:
+    def test_empty_path_returns_root(self) -> None:
+        data = {"items": [1, 2, 3]}
+        result = extract_view_data(data, "")
+        assert result == data
+
+    def test_simple_path(self) -> None:
+        data = {"results": {"items": [1, 2, 3]}}
+        result = extract_view_data(data, "results.items")
+        assert result == [1, 2, 3]
+
+    def test_nested_path(self) -> None:
+        data = {"a": {"b": {"c": "value"}}}
+        result = extract_view_data(data, "a.b.c")
+        assert result == "value"
+
+    def test_missing_path_returns_none(self) -> None:
+        data = {"items": [1, 2, 3]}
+        result = extract_view_data(data, "missing.path")
+        assert result is None
