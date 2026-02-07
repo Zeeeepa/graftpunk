@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from graftpunk.exceptions import SessionNotFoundError
+from graftpunk.exceptions import SessionNotFoundError, StorageError
 
 pytest.importorskip("boto3")
 
@@ -329,3 +329,58 @@ class TestUpdateSessionMetadata:
 
         result = storage.update_session_metadata("nonexistent", status="active")
         assert result is False
+
+
+class TestRetryLogic:
+    """Tests for retry logic in S3 storage."""
+
+    @patch("graftpunk.storage.s3.time.sleep")
+    def test_save_session_retries_on_server_error(
+        self, mock_sleep, storage, mock_s3_client, sample_metadata
+    ):
+        """Test that 5xx errors trigger retries."""
+        from botocore.exceptions import ClientError
+
+        storage.max_retries = 3
+        storage.base_delay = 0.01
+
+        error_response = {"Error": {"Code": "500"}, "ResponseMetadata": {"HTTPStatusCode": 500}}
+        mock_s3_client.put_object.side_effect = ClientError(error_response, "PutObject")
+
+        with pytest.raises(StorageError, match="after 3 attempts"):
+            storage.save_session("test", b"data", sample_metadata)
+
+        assert mock_s3_client.put_object.call_count == 3
+        assert mock_sleep.call_count == 2  # (max_retries - 1) sleeps
+
+    def test_save_session_no_retry_on_client_error(self, storage, mock_s3_client, sample_metadata):
+        """Test that 4xx errors don't trigger retries."""
+        from botocore.exceptions import ClientError
+
+        error_response = {"Error": {"Code": "400"}, "ResponseMetadata": {"HTTPStatusCode": 400}}
+        mock_s3_client.put_object.side_effect = ClientError(error_response, "PutObject")
+
+        with pytest.raises(StorageError):
+            storage.save_session("test", b"data", sample_metadata)
+
+        assert mock_s3_client.put_object.call_count == 1
+
+    @patch("graftpunk.storage.s3.time.sleep")
+    def test_retry_on_throttling(self, mock_sleep, storage, mock_s3_client, sample_metadata):
+        """Test retry on SlowDown/Throttling errors."""
+        from botocore.exceptions import ClientError
+
+        storage.max_retries = 2
+
+        error_response = {
+            "Error": {"Code": "SlowDown"},
+            "ResponseMetadata": {"HTTPStatusCode": 503},
+        }
+        mock_s3_client.put_object.side_effect = [
+            ClientError(error_response, "PutObject"),
+            {},  # Success
+            {},  # Metadata upload
+        ]
+
+        storage.save_session("test", b"data", sample_metadata)
+        assert mock_s3_client.put_object.call_count == 3  # retry + 2 uploads
