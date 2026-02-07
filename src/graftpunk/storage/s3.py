@@ -20,6 +20,8 @@ Storage Structure:
 """
 
 import json
+import random
+import time
 from datetime import UTC, datetime
 from typing import Any
 
@@ -136,6 +138,71 @@ class S3SessionStorage:
         """
         return f"sessions/{name}/metadata.json"
 
+    def _with_retry(self, operation: str, func, *args, **kwargs):
+        """Execute function with exponential backoff retry.
+
+        Args:
+            operation: Name of operation for logging
+            func: Function to execute
+            *args: Positional arguments for func
+            **kwargs: Keyword arguments for func
+
+        Returns:
+            Result of func(*args, **kwargs)
+
+        Raises:
+            StorageError: If operation fails after max_retries attempts
+        """
+        from botocore.exceptions import ClientError
+
+        last_exception = None
+        for attempt in range(self.max_retries):
+            try:
+                return func(*args, **kwargs)
+            except ClientError as e:
+                last_exception = e
+                error_code = e.response.get("Error", {}).get("Code", "")
+                status_code = e.response.get("ResponseMetadata", {}).get("HTTPStatusCode", 0)
+
+                # Non-retryable errors (4xx except throttling)
+                if status_code < 500 and error_code not in ("Throttling", "SlowDown"):
+                    raise StorageError(f"{operation} failed: {e}") from e
+
+                # Retryable - exponential backoff with jitter
+                delay = min(self.base_delay * (2**attempt), 30.0)
+                delay = delay * (0.5 + random.random() * 0.5)  # noqa: S311
+
+                LOG.warning(
+                    "s3_operation_retry",
+                    operation=operation,
+                    attempt=attempt + 1,
+                    max_attempts=self.max_retries,
+                    delay=delay,
+                    error=str(e),
+                )
+
+                if attempt < self.max_retries - 1:
+                    time.sleep(delay)
+            except (ConnectionError, TimeoutError, OSError) as e:
+                last_exception = e
+                delay = min(self.base_delay * (2**attempt), 30.0)
+                delay = delay * (0.5 + random.random() * 0.5)  # noqa: S311
+
+                LOG.warning(
+                    "s3_connection_retry",
+                    operation=operation,
+                    attempt=attempt + 1,
+                    delay=delay,
+                    error=str(e),
+                )
+
+                if attempt < self.max_retries - 1:
+                    time.sleep(delay)
+
+        raise StorageError(
+            f"{operation} failed after {self.max_retries} attempts"
+        ) from last_exception
+
     def save_session(
         self,
         name: str,
@@ -158,17 +225,21 @@ class S3SessionStorage:
         session_key = self._session_key(name)
         metadata_key = self._metadata_key(name)
 
-        # Save encrypted session data
-        self._client.put_object(
+        # Save encrypted session data with retry
+        self._with_retry(
+            "save_session_data",
+            self._client.put_object,
             Bucket=self.bucket,
             Key=session_key,
             Body=encrypted_data,
             ContentType="application/octet-stream",
         )
 
-        # Save metadata as JSON
+        # Save metadata as JSON with retry
         metadata_json = json.dumps(self._metadata_to_dict(metadata), indent=2)
-        self._client.put_object(
+        self._with_retry(
+            "save_session_metadata",
+            self._client.put_object,
             Bucket=self.bucket,
             Key=metadata_key,
             Body=metadata_json.encode("utf-8"),
