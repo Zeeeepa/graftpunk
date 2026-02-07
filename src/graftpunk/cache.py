@@ -2,7 +2,8 @@
 
 This module provides session storage functionality with pluggable backends:
 - Local filesystem (default): ~/.config/graftpunk/sessions/
-- Supabase (GRAFTPUNK_STORAGE_BACKEND=supabase): Supabase Storage + database
+- Supabase (GRAFTPUNK_STORAGE_BACKEND=supabase): Supabase Storage
+- S3 (GRAFTPUNK_STORAGE_BACKEND=s3): S3-compatible storage (AWS, R2, MinIO)
 
 Backend selection is automatic based on GRAFTPUNK_STORAGE_BACKEND environment variable.
 
@@ -85,6 +86,7 @@ def _get_session_storage_backend() -> "SessionStorageBackend":
     Returns the appropriate backend based on GRAFTPUNK_STORAGE_BACKEND env var:
     - "local" (default): Returns LocalSessionStorage
     - "supabase": Returns SupabaseSessionStorage
+    - "s3": Returns S3SessionStorage
     """
     global _session_storage_backend
 
@@ -102,6 +104,17 @@ def _get_session_storage_backend() -> "SessionStorageBackend":
             url=config["url"],
             service_key=config["service_key"],
             bucket_name=config.get("bucket_name", "sessions"),
+        )
+    elif settings.storage_backend == "s3":
+        from graftpunk.storage.s3 import S3SessionStorage
+
+        config = settings.get_storage_config()
+        _session_storage_backend = S3SessionStorage(
+            bucket=config["bucket"],
+            region=config.get("region"),
+            endpoint_url=config.get("endpoint_url"),
+            max_retries=config.get("retry_max_attempts", 5),
+            base_delay=config.get("retry_base_delay", 1.0),
         )
     else:
         # Default: local filesystem backend
