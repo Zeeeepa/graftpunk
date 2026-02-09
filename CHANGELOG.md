@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-02-08
+
+### Added
+
+- **First-Class Python API** (`GraftpunkClient`): Programmatic access to plugin commands (#90)
+  - `GraftpunkClient` — stateful, context-manager-friendly client that wraps a single plugin
+  - Attribute-based dispatch: `client.invoice.list(status="OPEN")`
+  - String dispatch: `client.execute("invoice", "list", status="OPEN")`
+  - Lazy session loading, token injection, 403 retry, and session persistence — same pipeline as the CLI
+  - Exported from top-level package: `from graftpunk import GraftpunkClient`
+
+- **Shared Plugin Discovery API**: `discover_all_plugins()` and `get_plugin()` in `graftpunk.plugins`
+  - Unified plugin lookup across entry points, YAML files, and Python files
+  - Cached discovery with `lru_cache` (call `discover_all_plugins.cache_clear()` to force refresh)
+  - Used by both the CLI and `GraftpunkClient`
+
+- **Shared Execution Core**: `execute_plugin_command()` in `graftpunk.client`
+  - Handles retry/rate-limit and `CommandResult` normalization
+  - CLI callback delegates to this function instead of maintaining its own execution logic
+
+### Changed
+
+- CLI plugin registration now delegates to `discover_all_plugins()` instead of calling individual discovery functions directly
+- Retry and rate-limit logic unified into `_run_handler_with_limits()` — single implementation shared by both the CLI and Python API paths
+- `close()` on `GraftpunkClient` wraps session persistence in try-except so failures don't prevent plugin teardown
+
 ## [1.3.0] - 2026-02-07
 
 ### Added
