@@ -1,14 +1,21 @@
-"""Tests for graftpunk.client — GraftpunkClient."""
+"""Tests for graftpunk.client — GraftpunkClient and shared execution functions."""
 
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 import requests
 
-from graftpunk.client import GraftpunkClient, _CommandCallable, _GroupProxy
+from graftpunk.client import (
+    GraftpunkClient,
+    _CommandCallable,
+    _enforce_shared_rate_limit,
+    _GroupProxy,
+    _run_handler_with_limits,
+    execute_plugin_command,
+)
 from graftpunk.exceptions import CommandError, SessionNotFoundError
 from graftpunk.plugins.cli_plugin import CommandContext, CommandResult, CommandSpec
 
@@ -711,3 +718,417 @@ class TestSessionDirtyReset:
         client = GraftpunkClient("testsite")
         client.fetch()
         assert not client._session_dirty  # reset after persist
+
+
+# ---------------------------------------------------------------------------
+# execute_plugin_command (module-level function)
+# ---------------------------------------------------------------------------
+
+
+class TestExecutePluginCommand:
+    """Tests for the module-level execute_plugin_command() function."""
+
+    def _make_ctx(self, **overrides: Any) -> CommandContext:
+        defaults = {
+            "session": MagicMock(),
+            "plugin_name": "testplugin",
+            "command_name": "test",
+            "api_version": 1,
+        }
+        defaults.update(overrides)
+        return CommandContext(**defaults)
+
+    def test_returns_command_result(self) -> None:
+        """Handler return value is wrapped in CommandResult."""
+        handler = MagicMock(return_value={"ok": True})
+        spec = _make_spec("cmd", handler=handler)
+        ctx = self._make_ctx()
+        result = execute_plugin_command(spec, ctx)
+        assert isinstance(result, CommandResult)
+        assert result.data == {"ok": True}
+
+    def test_passthrough_command_result(self) -> None:
+        """Handler returning CommandResult passes through unchanged."""
+        cr = CommandResult(data={"x": 1}, metadata={"page": 2})
+        handler = MagicMock(return_value=cr)
+        spec = _make_spec("cmd", handler=handler)
+        ctx = self._make_ctx()
+        result = execute_plugin_command(spec, ctx)
+        assert result is cr
+
+    def test_uses_custom_rate_limit_state(self) -> None:
+        """Custom rate_limit_state dict is passed through."""
+        state: dict[str, float] = {}
+        handler = MagicMock(return_value={})
+        spec = _make_spec("cmd", handler=handler, rate_limit=1.0)
+        ctx = self._make_ctx()
+        with patch("graftpunk.client.time"):
+            execute_plugin_command(spec, ctx, rate_limit_state=state)
+        assert "testplugin.cmd" in state
+
+    def test_forwards_kwargs_to_handler(self) -> None:
+        """Keyword arguments are passed to the handler."""
+        handler = MagicMock(return_value={})
+        spec = _make_spec("cmd", handler=handler)
+        ctx = self._make_ctx()
+        execute_plugin_command(spec, ctx, status="active")
+        _, kw = handler.call_args
+        assert kw["status"] == "active"
+
+
+# ---------------------------------------------------------------------------
+# _run_handler_with_limits (shared retry/rate-limit function)
+# ---------------------------------------------------------------------------
+
+
+class TestRunHandlerWithLimits:
+    """Tests for _run_handler_with_limits retry and rate-limit logic."""
+
+    def _make_ctx(self) -> CommandContext:
+        return CommandContext(
+            session=MagicMock(),
+            plugin_name="testplugin",
+            command_name="test",
+            api_version=1,
+        )
+
+    def test_retry_succeeds_after_transient_failure(self) -> None:
+        """Handler fails once then succeeds."""
+        handler = MagicMock(
+            side_effect=[requests.ConnectionError("transient"), {"ok": True}]
+        )
+        spec = _make_spec("cmd", handler=handler, max_retries=2)
+        ctx = self._make_ctx()
+        with patch("graftpunk.client.time.sleep"):
+            result = _run_handler_with_limits(handler, ctx, spec, {})
+        assert result == {"ok": True}
+        assert handler.call_count == 2
+
+    def test_exhausts_all_attempts(self) -> None:
+        """Raises last exception when all retries exhausted."""
+        handler = MagicMock(side_effect=requests.ConnectionError("permanent"))
+        spec = _make_spec("cmd", handler=handler, max_retries=2)
+        ctx = self._make_ctx()
+        with (
+            patch("graftpunk.client.time.sleep"),
+            pytest.raises(requests.ConnectionError, match="permanent"),
+        ):
+            _run_handler_with_limits(handler, ctx, spec, {})
+        assert handler.call_count == 3
+
+    def test_exponential_backoff_timing(self) -> None:
+        """time.sleep called with 1, 2, 4 for 3 retries."""
+        handler = MagicMock(side_effect=requests.ConnectionError("fail"))
+        spec = _make_spec("cmd", handler=handler, max_retries=3)
+        ctx = self._make_ctx()
+        with (
+            patch("graftpunk.client.time.sleep") as mock_sleep,
+            pytest.raises(requests.ConnectionError),
+        ):
+            _run_handler_with_limits(handler, ctx, spec, {})
+        assert mock_sleep.call_args_list == [call(1), call(2), call(4)]
+
+    def test_no_retry_on_programming_error(self) -> None:
+        """TypeError/ValueError propagate immediately without retry."""
+        for exc_class in (TypeError, ValueError):
+            handler = MagicMock(side_effect=exc_class("bug"))
+            spec = _make_spec("cmd", handler=handler, max_retries=3)
+            ctx = self._make_ctx()
+            with pytest.raises(exc_class, match="bug"):
+                _run_handler_with_limits(handler, ctx, spec, {})
+            assert handler.call_count == 1
+
+    @pytest.mark.parametrize(
+        "exc_type",
+        [requests.RequestException, ConnectionError, TimeoutError, OSError],
+    )
+    def test_each_retryable_exception_type(self, exc_type: type[Exception]) -> None:
+        """Each retryable exception type triggers retry."""
+        handler = MagicMock(side_effect=[exc_type("transient"), {"ok": True}])
+        spec = _make_spec("cmd", handler=handler, max_retries=1)
+        ctx = self._make_ctx()
+        with patch("graftpunk.client.time.sleep"):
+            result = _run_handler_with_limits(handler, ctx, spec, {})
+        assert result == {"ok": True}
+        assert handler.call_count == 2
+
+    def test_zero_retries_raises_immediately(self) -> None:
+        """max_retries=0 means single attempt then raise."""
+        handler = MagicMock(side_effect=requests.ConnectionError("once"))
+        spec = _make_spec("cmd", handler=handler, max_retries=0)
+        ctx = self._make_ctx()
+        with pytest.raises(requests.ConnectionError, match="once"):
+            _run_handler_with_limits(handler, ctx, spec, {})
+        assert handler.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# _enforce_shared_rate_limit
+# ---------------------------------------------------------------------------
+
+
+class TestEnforceSharedRateLimit:
+    """Tests for _enforce_shared_rate_limit."""
+
+    def test_first_call_no_sleep(self) -> None:
+        """First call does not sleep."""
+        state: dict[str, float] = {}
+        with (
+            patch("graftpunk.client.time.sleep") as mock_sleep,
+            patch("graftpunk.client.time.monotonic", return_value=100.0),
+        ):
+            _enforce_shared_rate_limit("key", 1.0, state)
+        mock_sleep.assert_not_called()
+        assert "key" in state
+
+    def test_rapid_second_call_sleeps(self) -> None:
+        """Second call within rate limit sleeps for remainder."""
+        state: dict[str, float] = {}
+        with (
+            patch("graftpunk.client.time.sleep") as mock_sleep,
+            patch(
+                "graftpunk.client.time.monotonic",
+                side_effect=[100.0, 100.0, 100.5, 100.5],
+            ),
+        ):
+            _enforce_shared_rate_limit("key", 1.0, state)
+            mock_sleep.assert_not_called()
+            _enforce_shared_rate_limit("key", 1.0, state)
+            mock_sleep.assert_called_once_with(0.5)
+
+
+# ---------------------------------------------------------------------------
+# Async handler detection
+# ---------------------------------------------------------------------------
+
+
+class TestAsyncHandlerDetection:
+    """Tests for async handler auto-execution in _run_handler_with_limits."""
+
+    def _make_ctx(self) -> CommandContext:
+        return CommandContext(
+            session=MagicMock(),
+            plugin_name="testplugin",
+            command_name="test",
+            api_version=1,
+        )
+
+    def test_async_handler_auto_executed_with_warning(self) -> None:
+        """Async handlers are auto-executed via asyncio.run with a warning."""
+
+        async def async_handler(ctx: Any, **kwargs: Any) -> dict[str, str]:
+            return {"async": "result"}
+
+        spec = _make_spec("asynccmd", handler=async_handler)
+        ctx = self._make_ctx()
+        with patch("graftpunk.client.LOG") as mock_log:
+            result = _run_handler_with_limits(async_handler, ctx, spec, {})
+        assert result == {"async": "result"}
+        mock_log.warning.assert_called_once()
+        assert mock_log.warning.call_args[0][0] == "async_handler_auto_executed"
+
+    def test_async_handler_result_returned(self) -> None:
+        """Return value from async handler is returned correctly."""
+
+        async def async_handler(ctx: Any, **kwargs: Any) -> list[int]:
+            return [1, 2, 3]
+
+        spec = _make_spec("asynccmd2", handler=async_handler)
+        ctx = self._make_ctx()
+        result = _run_handler_with_limits(async_handler, ctx, spec, {})
+        assert result == [1, 2, 3]
+
+    def test_sync_handler_no_warning(self) -> None:
+        """Sync handlers do not trigger the async warning."""
+
+        def sync_handler(ctx: Any, **kwargs: Any) -> dict[str, str]:
+            return {"sync": "result"}
+
+        spec = _make_spec("synccmd", handler=sync_handler)
+        ctx = self._make_ctx()
+        with patch("graftpunk.client.LOG") as mock_log:
+            result = _run_handler_with_limits(sync_handler, ctx, spec, {})
+        assert result == {"sync": "result"}
+        mock_log.warning.assert_not_called()
+
+    def test_async_handler_retried_on_failure(self) -> None:
+        """Async handler that fails is retried with backoff."""
+        call_count = 0
+
+        async def flaky_async(ctx: Any, **kwargs: Any) -> dict[str, str]:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 2:
+                raise ConnectionError("transient")
+            return {"recovered": "yes"}
+
+        spec = _make_spec("flakyasync", handler=flaky_async, max_retries=1)
+        ctx = self._make_ctx()
+        with patch("graftpunk.client.time.sleep"):
+            result = _run_handler_with_limits(flaky_async, ctx, spec, {})
+        assert result == {"recovered": "yes"}
+        assert call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# close() session persistence
+# ---------------------------------------------------------------------------
+
+
+class TestClosePersistence:
+    """Tests for close() dirty session persistence."""
+
+    @patch("graftpunk.client.update_session_cookies")
+    @patch("graftpunk.client.get_plugin")
+    def test_close_persists_dirty_session(
+        self, mock_get: MagicMock, mock_update: MagicMock
+    ) -> None:
+        """close() calls update_session_cookies when session is dirty."""
+        mock_get.return_value = _make_plugin(commands=[])
+        client = GraftpunkClient("testsite")
+        mock_session = MagicMock(spec=requests.Session)
+        client._session = mock_session
+        client._session_dirty = True
+        client.close()
+        mock_update.assert_called_once_with(mock_session, "testsite")
+
+    @patch("graftpunk.client.update_session_cookies")
+    @patch("graftpunk.client.get_plugin")
+    def test_close_persist_failure_still_tears_down(
+        self, mock_get: MagicMock, mock_update: MagicMock
+    ) -> None:
+        """If update_session_cookies fails, teardown still runs."""
+        mock_get.return_value = _make_plugin(commands=[])
+        mock_update.side_effect = RuntimeError("persist failed")
+        client = GraftpunkClient("testsite")
+        client._session = MagicMock(spec=requests.Session)
+        client._session_dirty = True
+        client.close()
+        client._plugin.teardown.assert_called_once()
+
+    @patch("graftpunk.client.update_session_cookies")
+    @patch("graftpunk.client.get_plugin")
+    def test_close_skips_persist_when_clean(
+        self, mock_get: MagicMock, mock_update: MagicMock
+    ) -> None:
+        """close() does not persist when session is not dirty."""
+        mock_get.return_value = _make_plugin(commands=[])
+        client = GraftpunkClient("testsite")
+        client._session = MagicMock(spec=requests.Session)
+        client._session_dirty = False
+        client.close()
+        mock_update.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# requires_session=None fallback
+# ---------------------------------------------------------------------------
+
+
+class TestRequiresSessionFallback:
+    """Tests for requires_session=None defaulting to plugin.requires_session."""
+
+    @patch("graftpunk.client.load_session_for_api")
+    @patch("graftpunk.client.get_plugin")
+    def test_none_falls_back_to_plugin_default(
+        self, mock_get: MagicMock, mock_load: MagicMock
+    ) -> None:
+        """requires_session=None uses plugin.requires_session (True)."""
+        handler = MagicMock(return_value={})
+        spec = _make_spec("fetch", handler=handler, requires_session=None)
+        mock_get.return_value = _make_plugin(commands=[spec], requires_session=True)
+        mock_load.return_value = MagicMock(spec=requests.Session)
+        client = GraftpunkClient("testsite")
+        client.fetch()
+        mock_load.assert_called_once()
+
+    @patch("graftpunk.client.load_session_for_api")
+    @patch("graftpunk.client.get_plugin")
+    def test_none_falls_back_to_plugin_false(
+        self, mock_get: MagicMock, mock_load: MagicMock
+    ) -> None:
+        """requires_session=None with plugin.requires_session=False skips session."""
+        handler = MagicMock(return_value={})
+        spec = _make_spec("health", handler=handler, requires_session=None)
+        mock_get.return_value = _make_plugin(commands=[spec], requires_session=False)
+        client = GraftpunkClient("testsite")
+        client.health()
+        mock_load.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# gp_base_url attribute
+# ---------------------------------------------------------------------------
+
+
+class TestGpBaseUrl:
+    """Tests for gp_base_url session attribute setting."""
+
+    @patch("graftpunk.client.load_session_for_api")
+    @patch("graftpunk.client.get_plugin")
+    def test_sets_gp_base_url_when_available(
+        self, mock_get: MagicMock, mock_load: MagicMock
+    ) -> None:
+        """Session's gp_base_url is set from plugin's base_url."""
+        handler = MagicMock(return_value={})
+        spec = _make_spec("fetch", handler=handler)
+        mock_get.return_value = _make_plugin(
+            commands=[spec], base_url="https://example.com"
+        )
+        session = MagicMock(spec=requests.Session)
+        session.gp_base_url = ""
+        mock_load.return_value = session
+        client = GraftpunkClient("testsite")
+        client.fetch()
+        assert session.gp_base_url == "https://example.com"
+
+
+# ---------------------------------------------------------------------------
+# _GroupProxy error message
+# ---------------------------------------------------------------------------
+
+
+class TestGroupProxyErrorMessage:
+    """Tests for _GroupProxy error message listing available commands."""
+
+    @patch("graftpunk.client.get_plugin")
+    def test_error_lists_available_commands(self, mock_get: MagicMock) -> None:
+        """AttributeError message lists available commands."""
+        specs = [
+            _make_spec("list", group="invoice"),
+            _make_spec("create", group="invoice"),
+        ]
+        mock_get.return_value = _make_plugin(commands=specs)
+        client = GraftpunkClient("testsite")
+        with pytest.raises(AttributeError, match="Available: create, list"):
+            _ = client.invoice.nope
+
+
+# ---------------------------------------------------------------------------
+# __repr__ methods
+# ---------------------------------------------------------------------------
+
+
+class TestReprMethods:
+    """Tests for __repr__ on client classes."""
+
+    @patch("graftpunk.client.get_plugin")
+    def test_client_repr(self, mock_get: MagicMock) -> None:
+        mock_get.return_value = _make_plugin(commands=[])
+        client = GraftpunkClient("testsite")
+        assert repr(client) == "GraftpunkClient('testsite')"
+
+    @patch("graftpunk.client.get_plugin")
+    def test_group_proxy_repr(self, mock_get: MagicMock) -> None:
+        specs = [_make_spec("list", group="invoice")]
+        mock_get.return_value = _make_plugin(commands=specs)
+        client = GraftpunkClient("testsite")
+        proxy = client.invoice
+        assert "list" in repr(proxy)
+
+    @patch("graftpunk.client.get_plugin")
+    def test_command_callable_repr(self, mock_get: MagicMock) -> None:
+        mock_get.return_value = _make_plugin(commands=[_make_spec("login")])
+        client = GraftpunkClient("testsite")
+        cmd = client.login
+        assert repr(cmd) == "_CommandCallable('login')"
