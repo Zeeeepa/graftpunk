@@ -866,8 +866,8 @@ class TestLoginEngineHeaderCapture:
     """Tests for header capture integration in login engine."""
 
     @pytest.mark.asyncio
-    async def test_nodriver_login_sets_header_profiles(self) -> None:
-        """Nodriver login extracts header profiles from capture backend."""
+    async def test_nodriver_login_sets_header_roles(self) -> None:
+        """Nodriver login extracts header roles from capture backend."""
         from graftpunk.plugins.login_engine import generate_login_method
 
         plugin = DeclarativeHN()
@@ -885,7 +885,7 @@ class TestLoginEngineHeaderCapture:
 
         mock_capture = MagicMock()
         mock_capture.start_capture_async = AsyncMock()
-        mock_capture.get_header_profiles.return_value = {
+        mock_capture.get_header_roles.return_value = {
             "navigation": {"User-Agent": "TestBrowser/1.0"}
         }
 
@@ -900,12 +900,12 @@ class TestLoginEngineHeaderCapture:
             result = await login_method({"username": "user", "password": "test"})  # noqa: S106
 
         assert result is True
-        assert instance._gp_header_profiles == {"navigation": {"User-Agent": "TestBrowser/1.0"}}
+        assert instance._gp_header_roles == {"navigation": {"User-Agent": "TestBrowser/1.0"}}
         mock_capture.start_capture_async.assert_awaited_once()
-        mock_capture.get_header_profiles.assert_called_once()
+        mock_capture.get_header_roles.assert_called_once()
 
-    def test_selenium_login_sets_header_profiles(self) -> None:
-        """Selenium login extracts header profiles from capture backend."""
+    def test_selenium_login_sets_header_roles(self) -> None:
+        """Selenium login extracts header roles from capture backend."""
         from graftpunk.plugins.login_engine import generate_login_method
 
         plugin = DeclarativeQuotes()
@@ -920,7 +920,7 @@ class TestLoginEngineHeaderCapture:
         instance.transfer_driver_cookies_to_session = MagicMock()
 
         mock_capture = MagicMock()
-        mock_capture.get_header_profiles.return_value = {"xhr": {"Accept": "application/json"}}
+        mock_capture.get_header_roles.return_value = {"xhr": {"Accept": "application/json"}}
 
         with (
             patch("graftpunk.plugins.login_engine.BrowserSession", mock_bs),
@@ -934,10 +934,10 @@ class TestLoginEngineHeaderCapture:
             result = login_method({"username": "user", "password": "test"})  # noqa: S106
 
         assert result is True
-        assert instance._gp_header_profiles == {"xhr": {"Accept": "application/json"}}
+        assert instance._gp_header_roles == {"xhr": {"Accept": "application/json"}}
         mock_capture.start_capture.assert_called_once()
         mock_capture.stop_capture.assert_called_once()
-        mock_capture.get_header_profiles.assert_called_once()
+        mock_capture.get_header_roles.assert_called_once()
 
 
 class TestSeleniumLoginValidationPaths:
@@ -1043,7 +1043,7 @@ class TestLoginTimeTokenExtraction:
 
         mock_capture = MagicMock()
         mock_capture.start_capture_async = AsyncMock()
-        mock_capture.get_header_profiles = MagicMock(return_value={})
+        mock_capture.get_header_roles = MagicMock(return_value={})
 
         with (
             patch("graftpunk.plugins.login_engine.BrowserSession", mock_bs),
@@ -1092,7 +1092,7 @@ class TestLoginTimeTokenExtraction:
 
         mock_capture = MagicMock()
         mock_capture.start_capture_async = AsyncMock()
-        mock_capture.get_header_profiles = MagicMock(return_value={})
+        mock_capture.get_header_roles = MagicMock(return_value={})
 
         with (
             patch("graftpunk.plugins.login_engine.BrowserSession", mock_bs),
@@ -1154,7 +1154,7 @@ class TestSeleniumTokenExtraction:
         mock_capture = MagicMock()
         mock_capture.start_capture = MagicMock()
         mock_capture.stop_capture = MagicMock()
-        mock_capture.get_header_profiles = MagicMock(return_value={})
+        mock_capture.get_header_roles = MagicMock(return_value={})
 
         with (
             patch("graftpunk.plugins.login_engine.BrowserSession", mock_bs),
@@ -1192,7 +1192,7 @@ class TestSeleniumTokenExtraction:
         mock_capture = MagicMock()
         mock_capture.start_capture = MagicMock()
         mock_capture.stop_capture = MagicMock()
-        mock_capture.get_header_profiles = MagicMock(return_value={})
+        mock_capture.get_header_roles = MagicMock(return_value={})
 
         with (
             patch("graftpunk.plugins.login_engine.BrowserSession", mock_bs),
@@ -1441,7 +1441,7 @@ class TestNodriverMultiStepLogin:
 
         mock_capture = MagicMock()
         mock_capture.start_capture_async = AsyncMock()
-        mock_capture.get_header_profiles = MagicMock(return_value={})
+        mock_capture.get_header_roles = MagicMock(return_value={})
 
         with (
             patch("graftpunk.plugins.login_engine.BrowserSession", mock_bs),
@@ -1490,7 +1490,7 @@ class TestNodriverMultiStepLogin:
 
         mock_capture = MagicMock()
         mock_capture.start_capture_async = AsyncMock()
-        mock_capture.get_header_profiles = MagicMock(return_value={})
+        mock_capture.get_header_roles = MagicMock(return_value={})
 
         with (
             patch("graftpunk.plugins.login_engine.BrowserSession", mock_bs),
@@ -1534,7 +1534,7 @@ class TestNodriverMultiStepLogin:
 
         mock_capture = MagicMock()
         mock_capture.start_capture_async = AsyncMock()
-        mock_capture.get_header_profiles = MagicMock(return_value={})
+        mock_capture.get_header_roles = MagicMock(return_value={})
 
         with (
             patch("graftpunk.plugins.login_engine.BrowserSession", mock_bs),
@@ -1575,7 +1575,7 @@ class TestNodriverMultiStepLogin:
 
         mock_capture = MagicMock()
         mock_capture.start_capture_async = AsyncMock()
-        mock_capture.get_header_profiles = MagicMock(return_value={})
+        mock_capture.get_header_roles = MagicMock(return_value={})
 
         with (
             patch("graftpunk.plugins.login_engine.BrowserSession", mock_bs),
@@ -1616,7 +1616,7 @@ class TestNodriverMultiStepLogin:
 
         mock_capture = MagicMock()
         mock_capture.start_capture_async = AsyncMock()
-        mock_capture.get_header_profiles = MagicMock(return_value={})
+        mock_capture.get_header_roles = MagicMock(return_value={})
 
         with (
             patch("graftpunk.plugins.login_engine.BrowserSession", mock_bs),
@@ -1652,7 +1652,7 @@ class TestNodriverMultiStepLogin:
 
         mock_capture = MagicMock()
         mock_capture.start_capture_async = AsyncMock()
-        mock_capture.get_header_profiles = MagicMock(return_value={})
+        mock_capture.get_header_roles = MagicMock(return_value={})
 
         with (
             patch("graftpunk.plugins.login_engine.BrowserSession", mock_bs),
@@ -1722,7 +1722,7 @@ class TestNodriverMultiStepLogin:
 
         mock_capture = MagicMock()
         mock_capture.start_capture_async = AsyncMock()
-        mock_capture.get_header_profiles = MagicMock(return_value={})
+        mock_capture.get_header_roles = MagicMock(return_value={})
 
         with (
             patch("graftpunk.plugins.login_engine.BrowserSession", mock_bs),
@@ -1765,7 +1765,7 @@ class TestNodriverMultiStepLogin:
 
         mock_capture = MagicMock()
         mock_capture.start_capture_async = AsyncMock()
-        mock_capture.get_header_profiles = MagicMock(return_value={})
+        mock_capture.get_header_roles = MagicMock(return_value={})
 
         with (
             patch("graftpunk.plugins.login_engine.BrowserSession", mock_bs),
@@ -1870,7 +1870,7 @@ class TestSeleniumMultiStepLogin:
         mock_capture = MagicMock()
         mock_capture.start_capture = MagicMock()
         mock_capture.stop_capture = MagicMock()
-        mock_capture.get_header_profiles = MagicMock(return_value={})
+        mock_capture.get_header_roles = MagicMock(return_value={})
 
         with (
             patch("graftpunk.plugins.login_engine.BrowserSession", mock_bs),
@@ -1985,7 +1985,7 @@ class TestSeleniumMultiStepLogin:
         mock_capture = MagicMock()
         mock_capture.start_capture = MagicMock()
         mock_capture.stop_capture = MagicMock()
-        mock_capture.get_header_profiles = MagicMock(return_value={})
+        mock_capture.get_header_roles = MagicMock(return_value={})
 
         with (
             patch("graftpunk.plugins.login_engine.BrowserSession", mock_bs),
@@ -2056,7 +2056,7 @@ class TestSeleniumMultiStepLogin:
         mock_capture = MagicMock()
         mock_capture.start_capture = MagicMock()
         mock_capture.stop_capture = MagicMock()
-        mock_capture.get_header_profiles = MagicMock(return_value={})
+        mock_capture.get_header_roles = MagicMock(return_value={})
 
         with (
             patch("graftpunk.plugins.login_engine.BrowserSession", mock_bs),

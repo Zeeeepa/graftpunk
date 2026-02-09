@@ -1,7 +1,7 @@
-"""Tests for header profile classification and extraction."""
+"""Tests for header role classification and extraction."""
 
 from graftpunk.observe.capture import NodriverCaptureBackend, SeleniumCaptureBackend
-from graftpunk.observe.headers import EXCLUDED_HEADERS, classify_request, extract_header_profiles
+from graftpunk.observe.headers import EXCLUDED_HEADERS, classify_request, extract_header_roles
 
 # --- classify_request() tests ---
 
@@ -88,8 +88,8 @@ def test_excluded_headers_contains_content_type():
     assert "content-type" in EXCLUDED_HEADERS
 
 
-def test_extract_header_profiles_excludes_content_type():
-    """Content-Type from POST XHR should not be captured in profile."""
+def test_extract_header_roles_excludes_content_type():
+    """Content-Type from POST XHR should not be captured in role."""
     request_map = {
         "1": {
             "headers": {
@@ -100,10 +100,10 @@ def test_extract_header_profiles_excludes_content_type():
             },
         },
     }
-    profiles = extract_header_profiles(request_map)
-    assert "xhr" in profiles
-    assert "Content-Type" not in profiles["xhr"]
-    assert profiles["xhr"]["Accept"] == "application/json"
+    roles = extract_header_roles(request_map)
+    assert "xhr" in roles
+    assert "Content-Type" not in roles["xhr"]
+    assert roles["xhr"]["Accept"] == "application/json"
 
 
 def test_excluded_headers_contains_referer_and_origin():
@@ -111,11 +111,11 @@ def test_excluded_headers_contains_referer_and_origin():
     assert "origin" in EXCLUDED_HEADERS
 
 
-# --- extract_header_profiles() tests ---
+# --- extract_header_roles() tests ---
 
 
-def test_extract_header_profiles_from_request_map():
-    """Build profiles from a realistic _request_map."""
+def test_extract_header_roles_from_request_map():
+    """Build roles from a realistic _request_map."""
     request_map = {
         "1": {
             "url": "https://example.com/",
@@ -146,64 +146,64 @@ def test_extract_header_profiles_from_request_map():
             "headers": {"Accept": "image/webp,image/png"},
         },
     }
-    profiles = extract_header_profiles(request_map)
-    assert "navigation" in profiles
-    assert "xhr" in profiles
-    assert "Cookie" not in profiles["navigation"]
-    assert "Host" not in profiles["navigation"]
-    assert ":authority" not in profiles["navigation"]
-    assert profiles["navigation"]["User-Agent"] == "Mozilla/5.0 ..."
-    assert profiles["xhr"]["X-Requested-With"] == "XMLHttpRequest"
-    assert "Cookie" not in profiles["xhr"]
+    roles = extract_header_roles(request_map)
+    assert "navigation" in roles
+    assert "xhr" in roles
+    assert "Cookie" not in roles["navigation"]
+    assert "Host" not in roles["navigation"]
+    assert ":authority" not in roles["navigation"]
+    assert roles["navigation"]["User-Agent"] == "Mozilla/5.0 ..."
+    assert roles["xhr"]["X-Requested-With"] == "XMLHttpRequest"
+    assert "Cookie" not in roles["xhr"]
 
 
-def test_extract_header_profiles_first_match_wins():
-    """Only the first matching request per profile is stored."""
+def test_extract_header_roles_first_match_wins():
+    """Only the first matching request per role is stored."""
     request_map = {
         "1": {"headers": {"sec-fetch-mode": "navigate", "User-Agent": "First"}},
         "2": {"headers": {"sec-fetch-mode": "navigate", "User-Agent": "Second"}},
     }
-    profiles = extract_header_profiles(request_map)
-    assert profiles["navigation"]["User-Agent"] == "First"
+    roles = extract_header_roles(request_map)
+    assert roles["navigation"]["User-Agent"] == "First"
 
 
-def test_extract_header_profiles_empty_map():
-    assert extract_header_profiles({}) == {}
+def test_extract_header_roles_empty_map():
+    assert extract_header_roles({}) == {}
 
 
-def test_extract_header_profiles_skips_empty_headers():
+def test_extract_header_roles_skips_empty_headers():
     request_map = {
         "1": {"headers": {}},
         "2": {"headers": {"sec-fetch-mode": "navigate", "User-Agent": "Test"}},
     }
-    profiles = extract_header_profiles(request_map)
-    assert "navigation" in profiles
-    assert profiles["navigation"]["User-Agent"] == "Test"
+    roles = extract_header_roles(request_map)
+    assert "navigation" in roles
+    assert roles["navigation"]["User-Agent"] == "Test"
 
 
-def test_selenium_backend_get_header_profiles():
-    """SeleniumCaptureBackend exposes header profiles from its request map."""
+def test_selenium_backend_get_header_roles():
+    """SeleniumCaptureBackend exposes header roles from its request map."""
     backend = SeleniumCaptureBackend.__new__(SeleniumCaptureBackend)
     backend._request_map = {
         "1": {"headers": {"sec-fetch-mode": "navigate", "User-Agent": "Test/1.0"}},
     }
-    profiles = backend.get_header_profiles()
-    assert "navigation" in profiles
-    assert profiles["navigation"]["User-Agent"] == "Test/1.0"
+    roles = backend.get_header_roles()
+    assert "navigation" in roles
+    assert roles["navigation"]["User-Agent"] == "Test/1.0"
 
 
-def test_nodriver_backend_get_header_profiles():
-    """NodriverCaptureBackend exposes header profiles from its request map."""
+def test_nodriver_backend_get_header_roles():
+    """NodriverCaptureBackend exposes header roles from its request map."""
     backend = NodriverCaptureBackend.__new__(NodriverCaptureBackend)
     backend._request_map = {
         "1": {"headers": {"sec-fetch-mode": "cors", "Accept": "application/json"}},
     }
-    profiles = backend.get_header_profiles()
-    assert "xhr" in profiles
+    roles = backend.get_header_roles()
+    assert "xhr" in roles
 
 
-def test_backend_get_header_profiles_empty():
-    """Backend with empty request map returns empty profiles."""
+def test_backend_get_header_roles_empty():
+    """Backend with empty request map returns empty roles."""
     backend = SeleniumCaptureBackend.__new__(SeleniumCaptureBackend)
     backend._request_map = {}
-    assert backend.get_header_profiles() == {}
+    assert backend.get_header_roles() == {}

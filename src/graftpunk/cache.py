@@ -361,13 +361,13 @@ def load_session_for_api(name: str) -> requests.Session:
     This extracts cookies and headers from a cached BrowserSession
     and creates a GraftpunkSession that can be used for API calls
     without launching a browser. If the cached session has header
-    profiles (captured during login), they are applied automatically.
+    roles (captured during login), they are applied automatically.
 
     Args:
         name: Session name (without .session.pickle extension).
 
     Returns:
-        GraftpunkSession with cookies, headers, and header profiles
+        GraftpunkSession with cookies, headers, and header roles
         from the cached session.
 
     Raises:
@@ -382,13 +382,13 @@ def load_session_for_api(name: str) -> requests.Session:
             f"No cached session found for '{name}'. Please login first."
         ) from exc
 
-    # Extract header profiles if present (from sessions created after header capture feature)
-    header_profiles = getattr(browser_session, "_gp_header_profiles", {})
+    # Extract header roles if present (from sessions created after header capture feature)
+    header_roles = getattr(browser_session, "_gp_header_roles", {})
 
-    # Create GraftpunkSession with header profiles for auto-detection
+    # Create GraftpunkSession with header roles for auto-detection
     from graftpunk.graftpunk_session import GraftpunkSession
 
-    api_session = GraftpunkSession(header_profiles=header_profiles)
+    api_session = GraftpunkSession(header_roles=header_roles)
 
     # Copy cookies from browser session
     if hasattr(browser_session, "cookies"):
@@ -399,7 +399,7 @@ def load_session_for_api(name: str) -> requests.Session:
         )
 
     # Copy headers from browser session, but skip requests-library defaults
-    # that would clobber browser identity headers extracted from profiles.
+    # that would clobber browser identity headers extracted from roles.
     # The pickled BrowserSession (a requests.Session) carries default headers
     # like User-Agent: python-requests/2.x — copying them overwrites the
     # Chrome UA that _apply_browser_identity() set during GraftpunkSession init.
@@ -427,8 +427,8 @@ def load_session_for_api(name: str) -> requests.Session:
     LOG.info(
         "created_api_session_from_cached_session",
         name=name,
-        has_header_profiles=bool(header_profiles),
-        profile_count=len(header_profiles),
+        has_header_roles=bool(header_roles),
+        role_count=len(header_roles),
     )
     return api_session
 

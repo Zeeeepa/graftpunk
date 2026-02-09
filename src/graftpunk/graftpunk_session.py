@@ -1,5 +1,12 @@
 """GraftpunkSession — requests.Session subclass with browser header replay."""
 
+# Role Registry
+# ==============
+# A "role" is a named set of HTTP headers that simulates a specific browser
+# request type (navigation, XHR, form submission, or any custom role defined
+# by a plugin).  Built-in roles register at import time using the same
+# register_role() call that plugins use.
+
 from __future__ import annotations
 
 from typing import Any, Final
@@ -31,15 +38,52 @@ _BROWSER_IDENTITY_HEADERS: Final[frozenset[str]] = frozenset(
 _MUTATION_METHODS: Final[frozenset[str]] = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 # Canonical Chrome request-type headers used as a fallback when a captured
-# profile for the detected request type is not available.
+# role for the detected request type is not available.
 _CANONICAL_HTML_ACCEPT: Final[str] = (
     "text/html,application/xhtml+xml,application/xml;"
     "q=0.9,image/avif,image/webp,image/apng,*/*;"
     "q=0.8,application/signed-exchange;v=b3;q=0.7"
 )
 
-_CANONICAL_REQUEST_HEADERS: Final[dict[str, dict[str, str]]] = {
-    "navigation": {
+# ---------------------------------------------------------------------------
+# Role Registry — public API
+# ---------------------------------------------------------------------------
+
+_ROLE_REGISTRY: dict[str, dict[str, str]] = {}
+
+
+def register_role(name: str, headers: dict[str, str]) -> None:
+    """Register a header role (built-in or plugin-defined).
+
+    Args:
+        name: Role name (e.g. ``"xhr"``, ``"navigation"``, ``"api"``).
+        headers: Dict of HTTP headers that define this role.
+    """
+    _ROLE_REGISTRY[name] = dict(headers)
+
+
+def list_roles() -> list[str]:
+    """Return sorted list of all registered role names."""
+    return sorted(_ROLE_REGISTRY.keys())
+
+
+def get_role_headers(name: str) -> dict[str, str] | None:
+    """Get headers for a registered role.
+
+    Args:
+        name: Role name.
+
+    Returns:
+        Copy of the header dict, or None if not registered.
+    """
+    headers = _ROLE_REGISTRY.get(name)
+    return dict(headers) if headers is not None else None
+
+
+# Register built-in roles
+register_role(
+    "navigation",
+    {
         "Accept": _CANONICAL_HTML_ACCEPT,
         "Sec-Fetch-Dest": "document",
         "Sec-Fetch-Mode": "navigate",
@@ -47,14 +91,20 @@ _CANONICAL_REQUEST_HEADERS: Final[dict[str, dict[str, str]]] = {
         "Sec-Fetch-User": "?1",
         "Upgrade-Insecure-Requests": "1",
     },
-    "xhr": {
+)
+register_role(
+    "xhr",
+    {
         "Accept": "application/json, text/javascript, */*; q=0.01",
         "Sec-Fetch-Dest": "empty",
         "Sec-Fetch-Mode": "cors",
         "Sec-Fetch-Site": "same-origin",
         "X-Requested-With": "XMLHttpRequest",
     },
-    "form": {
+)
+register_role(
+    "form",
+    {
         "Accept": _CANONICAL_HTML_ACCEPT,
         "Content-Type": "application/x-www-form-urlencoded",
         "Sec-Fetch-Dest": "document",
@@ -63,7 +113,7 @@ _CANONICAL_REQUEST_HEADERS: Final[dict[str, dict[str, str]]] = {
         "Sec-Fetch-User": "?1",
         "Upgrade-Insecure-Requests": "1",
     },
-}
+)
 
 
 def _case_insensitive_get(mapping: dict[str, str], key: str) -> str | None:
@@ -81,20 +131,20 @@ def _case_insensitive_get(mapping: dict[str, str], key: str) -> str | None:
 
 
 class GraftpunkSession(requests.Session):
-    """A requests.Session that auto-applies captured browser header profiles.
+    """A requests.Session that auto-applies captured browser header roles.
 
-    Header profiles are dicts of real browser headers captured during login,
-    classified into profiles: "navigation", "xhr", "form". This session
-    auto-detects which profile to apply based on request characteristics,
+    Header roles are dicts of real browser headers captured during login,
+    classified into roles: "navigation", "xhr", "form". This session
+    auto-detects which role to apply based on request characteristics,
     or allows explicit override.
 
-    Profile headers are applied as defaults — any headers explicitly passed
+    Role headers are applied as defaults — any headers explicitly passed
     by the caller take precedence and are not overwritten.
     """
 
     def __init__(
         self,
-        header_profiles: dict[str, dict[str, str]] | None = None,
+        header_roles: dict[str, dict[str, str]] | None = None,
         *,
         base_url: str = "",
         **kwargs: Any,
@@ -102,15 +152,15 @@ class GraftpunkSession(requests.Session):
         """Initialize a GraftpunkSession.
 
         Args:
-            header_profiles: Dict mapping profile names to header dicts.
-                Profiles: "navigation", "xhr", "form".
+            header_roles: Dict mapping role names to header dicts.
+                Roles: "navigation", "xhr", "form", or any custom name.
             base_url: Base URL for constructing Referer headers from paths.
             **kwargs: Additional arguments passed to requests.Session.
         """
         super().__init__(**kwargs)
-        self._gp_header_profiles: dict[str, dict[str, str]] = header_profiles or {}
+        self._gp_header_roles: dict[str, dict[str, str]] = header_roles or {}
         self._gp_csrf_tokens: dict[str, str] = {}
-        self.gp_default_profile: str | None = None
+        self.gp_default_role: str | None = None
         self.gp_base_url: str = base_url
         # Apply browser identity headers (User-Agent, sec-ch-ua, etc.)
         # BEFORE taking the snapshot so _is_user_set_header treats them
@@ -120,16 +170,16 @@ class GraftpunkSession(requests.Session):
         # user-modified headers from requests library defaults.
         self._gp_default_session_headers: dict[str, str] = dict(self.headers)
 
-    def headers_for(self, profile: str) -> dict[str, str]:
-        """Get the header dict for a specific profile.
+    def headers_for(self, role: str) -> dict[str, str]:
+        """Get the header dict for a specific role.
 
         Args:
-            profile: Profile name ("navigation", "xhr", or "form").
+            role: Role name ("navigation", "xhr", "form", or custom).
 
         Returns:
-            Header dict for the profile, or empty dict if not found.
+            Header dict for the role, or empty dict if not found.
         """
-        return dict(self._gp_header_profiles.get(profile, {}))
+        return dict(self._gp_header_roles.get(role, {}))
 
     def _resolve_referer(self, referer: str) -> str:
         """Resolve a Referer value from a path or full URL.
@@ -159,54 +209,53 @@ class GraftpunkSession(requests.Session):
         path = referer if referer.startswith("/") else f"/{referer}"
         return f"{base}{path}"
 
-    def _resolve_profile(self, profile_name: str) -> dict[str, str] | None:
-        """Resolve a profile name to its header dict (captured or canonical).
+    def _resolve_role(self, role_name: str) -> dict[str, str] | None:
+        """Resolve a role name to its header dict (captured or registered).
 
-        Checks captured profiles first, then falls back to canonical
-        Fetch-spec headers. Logs when falling back or when the profile
-        name is unknown.
+        Checks captured roles first, then falls back to the role registry.
+        Logs when falling back or when the role name is unknown.
 
         Args:
-            profile_name: Profile name ("navigation", "xhr", or "form").
+            role_name: Role name ("navigation", "xhr", "form", or custom).
 
         Returns:
-            Copy of the header dict, or None if profile is unknown.
+            Copy of the header dict, or None if role is unknown.
         """
-        captured = self._gp_header_profiles.get(profile_name)
+        captured = self._gp_header_roles.get(role_name)
         if captured:
             return dict(captured)
 
-        canonical = _CANONICAL_REQUEST_HEADERS.get(profile_name)
-        if canonical is not None:
+        registered = get_role_headers(role_name)
+        if registered is not None:
             LOG.debug(
-                "profile_not_captured_using_canonical",
-                detected=profile_name,
-                available=list(self._gp_header_profiles.keys()),
+                "role_not_captured_using_registered",
+                detected=role_name,
+                available=list(self._gp_header_roles.keys()),
             )
-            return dict(canonical)
+            return registered
 
         LOG.warning(
-            "unknown_profile_no_headers_applied",
-            profile=profile_name,
-            available_profiles=list(self._gp_header_profiles.keys()),
-            available_canonical=list(_CANONICAL_REQUEST_HEADERS.keys()),
+            "unknown_role_no_headers_applied",
+            role=role_name,
+            available_roles=list(self._gp_header_roles.keys()),
+            registered_roles=list_roles(),
         )
         return None
 
-    def _profile_headers_for(self, profile_name: str) -> dict[str, str]:
-        """Get request-type headers for a profile, excluding identity headers.
+    def _role_headers_for(self, role_name: str) -> dict[str, str]:
+        """Get request-type headers for a role, excluding identity headers.
 
-        Returns captured profile headers if available, falling back to
-        canonical Fetch-spec headers. Browser identity headers (User-Agent,
+        Returns captured role headers if available, falling back to
+        registered role headers. Browser identity headers (User-Agent,
         sec-ch-ua, etc.) are excluded -- they're already on self.headers.
 
         Args:
-            profile_name: Profile name ("navigation", "xhr", or "form").
+            role_name: Role name ("navigation", "xhr", "form", or custom).
 
         Returns:
-            Dict of request-type headers, or empty dict if profile unknown.
+            Dict of request-type headers, or empty dict if role unknown.
         """
-        headers = self._resolve_profile(profile_name)
+        headers = self._resolve_role(role_name)
         if headers is None:
             return {}
 
@@ -216,26 +265,26 @@ class GraftpunkSession(requests.Session):
         return {k: v for k, v in headers.items() if k.lower() not in lower_identity}
 
     def _apply_browser_identity(self) -> None:
-        """Copy browser identity headers from profiles onto the session.
+        """Copy browser identity headers from roles onto the session.
 
         Extracts identity headers (User-Agent, sec-ch-ua, etc.) from the first
-        profile that contains a User-Agent. All profiles originate from the same
-        browser, so we only need to check the first profile with identity data.
+        role that contains a User-Agent. All roles originate from the same
+        browser, so we only need to check the first role with identity data.
         """
-        for profile_headers in self._gp_header_profiles.values():
-            if _case_insensitive_get(profile_headers, "User-Agent") is None:
+        for role_headers in self._gp_header_roles.values():
+            if _case_insensitive_get(role_headers, "User-Agent") is None:
                 continue
 
             for header_name in _BROWSER_IDENTITY_HEADERS:
-                value = _case_insensitive_get(profile_headers, header_name)
+                value = _case_insensitive_get(role_headers, header_name)
                 if value is not None:
                     self.headers[header_name] = value
             return
 
-        if self._gp_header_profiles:
+        if self._gp_header_roles:
             LOG.warning(
-                "no_browser_identity_in_profiles",
-                available=list(self._gp_header_profiles.keys()),
+                "no_browser_identity_in_roles",
+                available=list(self._gp_header_roles.keys()),
             )
 
     def xhr(
@@ -247,24 +296,24 @@ class GraftpunkSession(requests.Session):
         headers: dict[str, str] | None = None,
         **kwargs: Any,
     ) -> requests.Response:
-        """Make a request with XHR profile headers.
+        """Make a request with XHR role headers.
 
-        Applies captured XHR headers (or canonical Fetch-spec defaults),
+        Applies captured XHR headers (or registered defaults),
         plus browser identity headers from the session. Caller-supplied
-        headers override profile headers.
+        headers override role headers.
 
         Args:
             method: HTTP method (GET, POST, PUT, PATCH, DELETE, etc.).
             url: Request URL.
             referer: Referer path ("/page") or full URL. Paths are joined
                 with gp_base_url. Omit to send no Referer.
-            headers: Additional headers that override profile headers.
+            headers: Additional headers that override role headers.
             **kwargs: Passed through to requests.Session.request().
 
         Returns:
             The response object.
         """
-        return self.request_with_profile(
+        return self.request_with_role(
             "xhr", method, url, referer=referer, headers=headers, **kwargs
         )
 
@@ -277,9 +326,9 @@ class GraftpunkSession(requests.Session):
         headers: dict[str, str] | None = None,
         **kwargs: Any,
     ) -> requests.Response:
-        """Make a request with navigation profile headers.
+        """Make a request with navigation role headers.
 
-        Applies captured navigation headers (or canonical Fetch-spec defaults),
+        Applies captured navigation headers (or registered defaults),
         plus browser identity headers from the session. Simulates a browser
         page navigation (clicking a link, entering a URL).
 
@@ -288,13 +337,13 @@ class GraftpunkSession(requests.Session):
             url: Request URL.
             referer: Referer path ("/page") or full URL. Paths are joined
                 with gp_base_url. Omit to send no Referer.
-            headers: Additional headers that override profile headers.
+            headers: Additional headers that override role headers.
             **kwargs: Passed through to requests.Session.request().
 
         Returns:
             The response object.
         """
-        return self.request_with_profile(
+        return self.request_with_role(
             "navigation", method, url, referer=referer, headers=headers, **kwargs
         )
 
@@ -307,9 +356,9 @@ class GraftpunkSession(requests.Session):
         headers: dict[str, str] | None = None,
         **kwargs: Any,
     ) -> requests.Response:
-        """Make a request with form submission profile headers.
+        """Make a request with form submission role headers.
 
-        Applies captured form headers (or canonical Fetch-spec defaults),
+        Applies captured form headers (or registered defaults),
         plus browser identity headers from the session. Simulates a browser
         form submission.
 
@@ -318,19 +367,19 @@ class GraftpunkSession(requests.Session):
             url: Request URL.
             referer: Referer path ("/page") or full URL. Paths are joined
                 with gp_base_url. Omit to send no Referer.
-            headers: Additional headers that override profile headers.
+            headers: Additional headers that override role headers.
             **kwargs: Passed through to requests.Session.request().
 
         Returns:
             The response object.
         """
-        return self.request_with_profile(
+        return self.request_with_role(
             "form", method, url, referer=referer, headers=headers, **kwargs
         )
 
-    def request_with_profile(
+    def request_with_role(
         self,
-        profile_name: str,
+        role_name: str,
         method: str,
         url: str,
         *,
@@ -338,58 +387,58 @@ class GraftpunkSession(requests.Session):
         headers: dict[str, str] | None = None,
         **kwargs: Any,
     ) -> requests.Response:
-        """Make a request with explicit profile headers.
+        """Make a request with explicit role headers.
 
-        Applies the named profile's headers (captured during login, plugin-
-        defined, or canonical fallback), then delegates to ``self.request()``.
+        Applies the named role's headers (captured during login, plugin-
+        defined, or registered fallback), then delegates to ``self.request()``.
         Used by ``xhr()``, ``navigate()``, ``form_submit()``, and the
-        ``gp http --profile`` flag.
+        ``gp http --role`` flag.
 
-        Profile names can be any string.  Built-in profiles (``"xhr"``,
-        ``"navigation"``, ``"form"``) fall back to canonical Fetch-spec
-        headers when no captured profile exists.  Custom profiles use only
-        headers registered in ``_gp_header_profiles``.
+        Role names can be any string.  Built-in roles (``"xhr"``,
+        ``"navigation"``, ``"form"``) fall back to registered Fetch-spec
+        headers when no captured role exists.  Custom roles use headers
+        registered via ``register_role()`` or stored in ``_gp_header_roles``.
 
         Args:
-            profile_name: Profile to apply (e.g. ``"xhr"``, ``"navigation"``,
-                ``"form"``, or any custom profile name).
+            role_name: Role to apply (e.g. ``"xhr"``, ``"navigation"``,
+                ``"form"``, or any custom role name).
             method: HTTP method.
             url: Request URL.
             referer: Optional Referer path or URL.
-            headers: Optional caller headers (override profile headers).
+            headers: Optional caller headers (override role headers).
             **kwargs: Passed through to requests.Session.request().
 
         Returns:
             The response object.
         """
-        profile_headers = self._profile_headers_for(profile_name)
+        role_headers = self._role_headers_for(role_name)
 
         if referer is not None:
-            profile_headers["Referer"] = self._resolve_referer(referer)
+            role_headers["Referer"] = self._resolve_referer(referer)
 
-        # Caller headers override profile headers
+        # Caller headers override role headers
         if headers:
-            profile_headers.update(headers)
+            role_headers.update(headers)
 
         # Note: self.request() calls prepare_request(), which runs
-        # _detect_profile() again and may select a different profile.
+        # _detect_role() again and may select a different role.
         # However, our explicit headers are passed as request-level
-        # headers, which take precedence over session-level profile
+        # headers, which take precedence over session-level role
         # headers in the requests merge logic (see prepare_request's
         # priority chain).
-        return self.request(method.upper(), url, headers=profile_headers, **kwargs)
+        return self.request(method.upper(), url, headers=role_headers, **kwargs)
 
-    def _detect_profile(self, request: requests.Request) -> str:
-        """Auto-detect the appropriate header profile for a request.
+    def _detect_role(self, request: requests.Request) -> str:
+        """Auto-detect the appropriate header role for a request.
 
         Args:
             request: The request about to be sent.
 
         Returns:
-            Profile name ("navigation", "xhr", or "form").
+            Role name ("navigation", "xhr", or "form").
         """
-        if self.gp_default_profile:
-            return self.gp_default_profile
+        if self.gp_default_role:
+            return self.gp_default_role
 
         method = (request.method or "GET").upper()
 
@@ -454,10 +503,10 @@ class GraftpunkSession(requests.Session):
             prepared.headers.setdefault(name, value)
 
     def prepare_request(self, request: requests.Request, **kwargs: Any) -> requests.PreparedRequest:
-        """Prepare a request with auto-detected profile headers.
+        """Prepare a request with auto-detected role headers.
 
-        Overrides the base implementation to inject header profiles based on
-        request characteristics. Profile headers are applied as session-level
+        Overrides the base implementation to inject header roles based on
+        request characteristics. Role headers are applied as session-level
         defaults so that any headers explicitly set by the caller take precedence.
 
         Session headers are temporarily modified during preparation and restored
@@ -471,24 +520,24 @@ class GraftpunkSession(requests.Session):
             **kwargs: Additional arguments passed to requests.Session.prepare_request().
 
         Returns:
-            A PreparedRequest with applied profile headers (if configured).
+            A PreparedRequest with applied role headers (if configured).
         """
-        if not self._gp_header_profiles:
+        if not self._gp_header_roles:
             prepared = super().prepare_request(request, **kwargs)
-        elif profile_headers := self._resolve_profile(self._detect_profile(request)):
-            # Apply profile headers as session defaults (lowest priority).
+        elif role_headers := self._resolve_role(self._detect_role(request)):
+            # Apply role headers as session defaults (lowest priority).
             # Priority: request headers (caller-supplied) >
-            # user-modified session headers > profile > session defaults.
+            # user-modified session headers > role > session defaults.
             original_session_headers = dict(self.headers)
 
-            # Start from profile headers as the base
-            merged = dict(profile_headers)
+            # Start from role headers as the base
+            merged = dict(role_headers)
             # Layer session headers on top, but only if user changed them
             for key, value in original_session_headers.items():
                 if self._is_user_set_header(key):
                     merged[key] = value
                 elif key not in merged:
-                    # Keep defaults that profile doesn't override
+                    # Keep defaults that role doesn't override
                     merged[key] = value
 
             self.headers.clear()

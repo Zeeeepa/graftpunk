@@ -338,7 +338,7 @@ def _generate_nodriver_login(plugin: SitePlugin) -> Any:
         async with BrowserSession(backend="nodriver", headless=False) as session:
             tab = await session.driver.get(f"{base_url}{login_url}")
 
-            # Start header capture for profile extraction (lightweight, no body fetching)
+            # Start header capture for role extraction (lightweight, no body fetching)
             from graftpunk.observe.capture import create_capture_backend
 
             _header_capture = create_capture_backend(
@@ -433,8 +433,8 @@ def _generate_nodriver_login(plugin: SitePlugin) -> Any:
                 LOG.debug("login_url_capture_failed", error=str(exc), backend="nodriver")
                 session.current_url = f"{base_url}{login_url}"
 
-            # Extract header profiles from captured network requests
-            session._gp_header_profiles = _header_capture.get_header_profiles()
+            # Extract header roles from captured network requests
+            session._gp_header_roles = _header_capture.get_header_roles()
 
             # Transfer cookies and cache
             await session.transfer_nodriver_cookies_to_session()
@@ -472,7 +472,7 @@ def _generate_selenium_login(plugin: SitePlugin) -> Any:
         success_selector = plugin.login_config.success
 
         with BrowserSession(backend="selenium", headless=False) as session:
-            # Start header capture for profile extraction
+            # Start header capture for role extraction
             from graftpunk.observe.capture import create_capture_backend
 
             _header_capture = create_capture_backend("selenium", session.driver)
@@ -559,9 +559,9 @@ def _generate_selenium_login(plugin: SitePlugin) -> Any:
                 LOG.debug("login_url_capture_failed", error=str(exc), backend="selenium")
                 session.current_url = f"{base_url}{login_url}"
 
-            # Stop capture to parse perf log, then extract profiles
+            # Stop capture to parse perf log, then extract roles
             _header_capture.stop_capture()
-            session._gp_header_profiles = _header_capture.get_header_profiles()
+            session._gp_header_roles = _header_capture.get_header_roles()
 
             # Cache session
             session.transfer_driver_cookies_to_session()
