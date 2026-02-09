@@ -725,6 +725,18 @@ All HTTP methods are supported: `get`, `post`, `put`, `patch`, `delete`, `head`,
 
 The session is loaded as a `GraftpunkSession` with full browser header replay, so requests have the same fingerprint as the browser that logged in.
 
+### Header Profiles (`--profile`)
+
+By default, `gp http` sends navigation-style headers. Some API endpoints expect XHR headers instead. The `--profile` flag selects the correct combination of `Sec-Fetch-*`, `Accept`, and `X-Requested-With` headers:
+
+```bash
+gp http get -s mybank --profile xhr https://secure.mybank.com/api/status
+gp http post -s mybank --profile form https://secure.mybank.com/submit
+gp http get -s mybank --profile navigate https://secure.mybank.com/page
+```
+
+Under the hood, `--profile xhr` calls `session.xhr()`, `--profile navigate` calls `session.navigate()`, and `--profile form` calls `session.form_submit()` — the same methods available in the Python API.
+
 ---
 
 ## Authenticated Browser Capture (`gp observe go`)

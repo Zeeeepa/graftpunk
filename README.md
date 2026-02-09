@@ -297,6 +297,12 @@ gp http get -s mybank https://secure.mybank.com/api/accounts
 gp http post -s mybank https://secure.mybank.com/api/transfer --data '{"amount": 100}'
 ```
 
+Use `--profile` to set browser header profiles (XHR, navigation, or form):
+
+```bash
+gp http get -s mybank --profile xhr https://secure.mybank.com/api/status
+```
+
 Supports all HTTP methods: `get`, `post`, `put`, `patch`, `delete`, `head`, `options`.
 
 ### Observability
