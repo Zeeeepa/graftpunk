@@ -5,10 +5,11 @@ client that wraps a single plugin.  Commands are accessible via
 attribute access (``client.login()``) or string dispatch
 (``client.execute("login")``).
 
-The module-level ``execute_plugin_command()`` function encapsulates the
-shared execution core (handler execution with retry / rate-limit and
-result normalization) used by the CLI callback.  Callers handle
-session loading, token injection, 403 retry, and session persistence.
+The module also exposes ``execute_plugin_command()`` -- a thin
+wrapper around ``_run_handler_with_limits()`` that adds
+``CommandResult`` normalization.  The CLI callback uses this
+function; ``GraftpunkClient`` calls ``_run_handler_with_limits``
+directly so it can manage its own per-client rate-limit state.
 
 Example::
 
@@ -185,19 +186,25 @@ def execute_plugin_command(
 class GraftpunkClient:
     """Stateful client for a single plugin.
 
-    Builds a command hierarchy on init from the plugin's
-    ``get_commands()`` list.  Top-level commands become
-    ``_CommandCallable`` objects; grouped commands are nested
-    under ``_GroupProxy`` objects.
+    Wraps a plugin's command hierarchy so commands are callable
+    via attribute access (``client.login()``) or string dispatch
+    (``client.execute("login")``).  Sessions are loaded lazily
+    on first command that requires one, and reused across calls.
+
+    Observability is a no-op in the Python API -- use the CLI
+    (``--observe``) for capture-based observability.
 
     Args:
         plugin_name: The ``site_name`` of the plugin to load.
+
+    Raises:
+        PluginError: If no plugin with the given name exists.
     """
 
     def __init__(self, plugin_name: str) -> None:
         self._plugin: CLIPluginProtocol = get_plugin(plugin_name)
-        self._session = None
-        self._session_dirty = False
+        self._session: requests.Session | None = None
+        self._session_dirty: bool = False
         self._last_execution: dict[str, float] = {}
 
         # Build command hierarchy
@@ -280,15 +287,14 @@ class GraftpunkClient:
     def _execute_command(self, spec: CommandSpec, **kwargs: Any) -> CommandResult:
         """Execute a resolved command through the full pipeline.
 
-        Pipeline steps:
-        1. Resolve whether a session is needed.
-        2. Lazy-load session via ``load_session_for_api`` if needed.
-        3. Inject tokens via ``prepare_session`` if plugin has ``token_config``.
-        4. Build ``CommandContext``.
-        5. Run handler with retry/rate-limit via ``_execute_with_limits``.
-        6. On 403 + token_config: clear tokens, re-prepare, retry once.
-        7. Persist session if dirty or ``spec.saves_session``.
-        8. Normalize return to ``CommandResult``.
+        Pipeline:
+        1. Lazy-load session if needed.
+        2. Inject tokens via ``prepare_session`` if configured.
+        3. Build ``CommandContext``.
+        4. Run handler with retry/rate-limit; on 403 + token_config,
+           clear tokens, re-prepare, and retry once.
+        5. Persist session if dirty or ``spec.saves_session``.
+        6. Normalize return to ``CommandResult``.
 
         Args:
             spec: The resolved command specification.
@@ -296,40 +302,45 @@ class GraftpunkClient:
 
         Returns:
             A ``CommandResult`` wrapping the handler's return value.
+
+        Raises:
+            SessionNotFoundError: If the session cannot be loaded.
+            requests.exceptions.HTTPError: On non-403 HTTP errors, or
+                403 errors when no ``token_config`` is set.
+            ValueError: If ``prepare_session`` fails to extract tokens.
         """
         plugin = self._plugin
+        base_url: str = getattr(plugin, "base_url", "")
+        token_config = getattr(plugin, "token_config", None)
         needs_session = (
             spec.requires_session if spec.requires_session is not None else plugin.requires_session
         )
 
-        # Step 1 — lazy-load session
+        # 1. Lazy-load session
         if needs_session and self._session is None:
             self._session = load_session_for_api(plugin.session_name)
-            base_url = getattr(plugin, "base_url", "")
             if base_url and hasattr(self._session, "gp_base_url"):
                 setattr(self._session, "gp_base_url", base_url)  # noqa: B010
 
         session = self._session if needs_session else requests.Session()
 
-        # Step 2 — token injection
-        token_config = getattr(plugin, "token_config", None)
+        # 2. Token injection
         if token_config is not None and needs_session:
-            base_url = getattr(plugin, "base_url", "")
             prepare_session(session, token_config, base_url)
 
-        # Step 3 — build CommandContext
+        # 3. Build CommandContext
         ctx = CommandContext(
             session=session,
             plugin_name=plugin.site_name,
             command_name=spec.name,
             api_version=plugin.api_version,
-            base_url=getattr(plugin, "base_url", ""),
+            base_url=base_url,
             config=getattr(plugin, "_plugin_config", None),
             observe=NoOpObservabilityContext(),
             _session_name=(plugin.session_name if needs_session else ""),
         )
 
-        # Step 4 — execute with retry/rate-limit
+        # 4. Execute with retry/rate-limit; 403 token refresh
         try:
             result = _run_handler_with_limits(
                 spec.handler, ctx, spec, self._last_execution, **kwargs
@@ -346,7 +357,6 @@ class GraftpunkClient:
                     url=(exc.response.url if exc.response else "unknown"),
                 )
                 clear_cached_tokens(session)
-                base_url = getattr(plugin, "base_url", "")
                 prepare_session(session, token_config, base_url)
                 self._session_dirty = True
                 result = _run_handler_with_limits(
@@ -355,12 +365,12 @@ class GraftpunkClient:
             else:
                 raise
 
-        # Step 5 — persist session if dirty
+        # 5. Persist session if dirty
         if (spec.saves_session or ctx._session_dirty or self._session_dirty) and needs_session:
             update_session_cookies(session, plugin.session_name)
             self._session_dirty = False
 
-        # Step 6 — normalize to CommandResult
+        # 6. Normalize to CommandResult
         if isinstance(result, CommandResult):
             return result
         return CommandResult(data=result)
@@ -393,6 +403,9 @@ class GraftpunkClient:
                 exc_info=True,
             )
 
+    def __repr__(self) -> str:
+        return f"GraftpunkClient({self._plugin.site_name!r})"
+
     def __enter__(self) -> GraftpunkClient:
         return self
 
@@ -416,6 +429,10 @@ class _GroupProxy:
     ) -> None:
         self._client = client
         self._commands = commands
+
+    def __repr__(self) -> str:
+        cmds = ", ".join(sorted(self._commands))
+        return f"_GroupProxy(commands=[{cmds}])"
 
     def __getattr__(self, name: str) -> _CommandCallable:
         """Return a callable for *name*.
@@ -443,6 +460,9 @@ class _CommandCallable:
     def __init__(self, client: GraftpunkClient, spec: CommandSpec) -> None:
         self._client = client
         self._spec = spec
+
+    def __repr__(self) -> str:
+        return f"_CommandCallable({self._spec.name!r})"
 
     def __call__(self, **kwargs: Any) -> CommandResult:
         """Execute the command with the given keyword arguments."""
