@@ -9,6 +9,8 @@ import pytest
 import requests
 
 from graftpunk.cli.http_commands import (
+    _PROFILE_METHODS,
+    _dispatch_request,
     _make_request,
     _print_response,
     _resolve_json_body,
@@ -411,6 +413,190 @@ class TestHttpCommandCLI:
         assert result.exit_code == 0
         output = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
         assert "--no-session" in output
+
+
+class TestDispatchRequest:
+    """Tests for _dispatch_request."""
+
+    def test_no_profile_uses_session_request(self) -> None:
+        mock_session = MagicMock()
+        mock_response = MagicMock(spec=requests.Response)
+        mock_session.request.return_value = mock_response
+
+        result = _dispatch_request(mock_session, "GET", "https://example.com", timeout=30)
+
+        mock_session.request.assert_called_once_with("GET", "https://example.com", timeout=30)
+        assert result == mock_response
+
+    def test_xhr_profile_calls_xhr_method(self) -> None:
+        mock_session = MagicMock()
+        mock_response = MagicMock(spec=requests.Response)
+        mock_session.xhr.return_value = mock_response
+
+        result = _dispatch_request(
+            mock_session, "GET", "https://example.com/api", profile="xhr", timeout=30
+        )
+
+        mock_session.xhr.assert_called_once_with("GET", "https://example.com/api", timeout=30)
+        mock_session.request.assert_not_called()
+        assert result == mock_response
+
+    def test_navigate_profile_calls_navigate_method(self) -> None:
+        mock_session = MagicMock()
+        mock_response = MagicMock(spec=requests.Response)
+        mock_session.navigate.return_value = mock_response
+
+        result = _dispatch_request(
+            mock_session, "GET", "https://example.com/page", profile="navigate", timeout=30
+        )
+
+        mock_session.navigate.assert_called_once_with("GET", "https://example.com/page", timeout=30)
+        assert result == mock_response
+
+    def test_form_profile_calls_form_submit_method(self) -> None:
+        mock_session = MagicMock()
+        mock_response = MagicMock(spec=requests.Response)
+        mock_session.form_submit.return_value = mock_response
+
+        result = _dispatch_request(
+            mock_session, "POST", "https://example.com/submit", profile="form", timeout=30
+        )
+
+        mock_session.form_submit.assert_called_once_with(
+            "POST", "https://example.com/submit", timeout=30
+        )
+        assert result == mock_response
+
+
+class TestMakeRequestWithProfile:
+    """Tests for _make_request with --profile flag."""
+
+    @patch("graftpunk.cli.http_commands.load_session_for_api")
+    @patch("graftpunk.cli.plugin_commands._registered_plugins_for_teardown", [])
+    @patch("graftpunk.cli.plugin_commands._plugin_session_map", {})
+    def test_profile_xhr_dispatches_to_session_xhr(self, mock_load: MagicMock) -> None:
+        mock_session = MagicMock()
+        mock_session.headers = {}
+        mock_response = MagicMock(spec=requests.Response)
+        mock_response.status_code = 200
+        mock_session.xhr.return_value = mock_response
+        mock_load.return_value = mock_session
+
+        response = _make_request(
+            "GET",
+            "https://example.com/api",
+            session_name="test-session",
+            profile="xhr",
+        )
+
+        mock_session.xhr.assert_called_once()
+        mock_session.request.assert_not_called()
+        assert response == mock_response
+
+    @patch("graftpunk.cli.http_commands.load_session_for_api")
+    @patch("graftpunk.cli.plugin_commands._registered_plugins_for_teardown", [])
+    @patch("graftpunk.cli.plugin_commands._plugin_session_map", {})
+    def test_profile_none_uses_session_request(self, mock_load: MagicMock) -> None:
+        mock_session = MagicMock()
+        mock_session.headers = {}
+        mock_response = MagicMock(spec=requests.Response)
+        mock_response.status_code = 200
+        mock_session.request.return_value = mock_response
+        mock_load.return_value = mock_session
+
+        response = _make_request(
+            "GET",
+            "https://example.com",
+            session_name="test-session",
+        )
+
+        mock_session.request.assert_called_once()
+        assert response == mock_response
+
+
+class TestProfileCLI:
+    """CLI-level tests for --profile flag."""
+
+    def test_profile_flag_in_help(self) -> None:
+        import re
+
+        from typer.testing import CliRunner
+
+        from graftpunk.cli.main import app
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["http", "get", "--help"])
+        assert result.exit_code == 0
+        output = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+        assert "--profile" in output
+
+    def test_invalid_profile_exits_with_error(self) -> None:
+        import re
+
+        from typer.testing import CliRunner
+
+        from graftpunk.cli.main import app
+
+        runner = CliRunner()
+        result = runner.invoke(
+            app,
+            ["http", "get", "--no-session", "--profile", "bogus", "https://example.com"],
+        )
+        assert result.exit_code == 1
+        output = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+        assert "Unknown profile" in output
+
+    def test_profile_xhr_via_cli(self) -> None:
+        from typer.testing import CliRunner
+
+        from graftpunk.cli.main import app
+
+        runner = CliRunner()
+        mock_response = MagicMock(spec=requests.Response)
+        mock_response.status_code = 200
+        mock_response.reason = "OK"
+        mock_response.ok = True
+        mock_response.text = '{"status": "ok"}'
+        mock_response.elapsed = MagicMock()
+        mock_response.elapsed.total_seconds.return_value = 0.1
+        mock_response.request = MagicMock()
+        mock_response.request.headers = {}
+        mock_response.headers = {}
+        mock_response.content = b'{"status": "ok"}'
+
+        with (
+            patch.object(requests.Session, "xhr", create=True, return_value=mock_response),
+            patch("graftpunk.cli.http_commands._save_observe_data"),
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "http",
+                    "get",
+                    "--no-session",
+                    "--profile",
+                    "xhr",
+                    "https://example.com/api",
+                ],
+            )
+
+        assert result.exit_code == 0
+
+
+class TestProfileMethodsMapping:
+    """Tests for the _PROFILE_METHODS constant."""
+
+    def test_all_profiles_present(self) -> None:
+        assert set(_PROFILE_METHODS) == {"xhr", "navigate", "form"}
+
+    def test_xhr_maps_to_xhr(self) -> None:
+        assert _PROFILE_METHODS["xhr"] == "xhr"
+
+    def test_navigate_maps_to_navigate(self) -> None:
+        assert _PROFILE_METHODS["navigate"] == "navigate"
+
+    def test_form_maps_to_form_submit(self) -> None:
+        assert _PROFILE_METHODS["form"] == "form_submit"
 
 
 def test_default_browser_headers_removed() -> None:

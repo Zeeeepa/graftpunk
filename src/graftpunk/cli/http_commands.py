@@ -55,6 +55,41 @@ def _resolve_json_body(json_arg: str) -> str:
     return json_arg
 
 
+# Maps CLI --profile values to GraftpunkSession method names
+_PROFILE_METHODS: dict[str, str] = {
+    "xhr": "xhr",
+    "navigate": "navigate",
+    "form": "form_submit",
+}
+
+
+def _dispatch_request(
+    session: requests.Session,
+    method: str,
+    url: str,
+    *,
+    profile: str | None = None,
+    **kwargs: object,
+) -> requests.Response:
+    """Dispatch a request using a profile method or plain ``session.request()``.
+
+    Args:
+        session: The session to use.
+        method: HTTP method.
+        url: Target URL.
+        profile: Header profile name (``"xhr"``, ``"navigate"``, ``"form"``).
+        **kwargs: Passed through to the request method.
+
+    Returns:
+        The HTTP response.
+    """
+    if profile is not None:
+        method_name = _PROFILE_METHODS[profile]
+        profile_method = getattr(session, method_name)
+        return profile_method(method, url, **kwargs)
+    return session.request(method, url, **kwargs)
+
+
 def _make_request(
     method: str,
     url: str,
@@ -62,6 +97,7 @@ def _make_request(
     session_name: str | None = None,
     no_session: bool = False,
     browser_headers: bool = True,
+    profile: str | None = None,
     json_body: str | None = None,
     form_data: str | None = None,
     extra_headers: list[str] | None = None,
@@ -77,6 +113,9 @@ def _make_request(
         browser_headers: Whether to keep auto-detected browser header profiles.
             When False, clears ``_gp_header_profiles`` so the session sends
             only its base headers.
+        profile: Header profile to use: ``"xhr"``, ``"navigate"``, or
+            ``"form"``.  Requires a ``GraftpunkSession``.  When None,
+            falls back to ``session.request()`` (default behavior).
         json_body: JSON string body (mutually exclusive with form_data).
         form_data: Form-encoded body string (mutually exclusive with json_body).
         extra_headers: List of ``"Name: value"`` header strings.
@@ -142,7 +181,7 @@ def _make_request(
         prepare_session(session, token_config, base_url)
 
     try:
-        response = session.request(method, url, **kwargs)
+        response = _dispatch_request(session, method, url, profile=profile, **kwargs)
     except requests.exceptions.ConnectionError as exc:
         gp_console.error(f"Connection failed: {exc}")
         raise typer.Exit(1) from exc
@@ -167,7 +206,7 @@ def _make_request(
             gp_console.error(f"Token refresh failed: {exc}")
             return response  # Return the original 403 response
         try:
-            response = session.request(method, url, **kwargs)
+            response = _dispatch_request(session, method, url, profile=profile, **kwargs)
         except requests.exceptions.RequestException as exc:
             gp_console.error(f"Retry request failed: {exc}")
             raise typer.Exit(1) from exc
@@ -314,6 +353,13 @@ def _http_command(method: str) -> typer.models.CommandFunctionType:
             list[str] | None,
             typer.Option("--header", "-H", help="Extra header(s), format 'Name: value'"),
         ] = None,
+        profile: Annotated[
+            str | None,
+            typer.Option(
+                "--profile",
+                help="Header profile: xhr, navigate, or form.",
+            ),
+        ] = None,
         no_browser_headers: Annotated[
             bool,
             typer.Option("--no-browser-headers", help="Disable browser-like headers"),
@@ -339,6 +385,12 @@ def _http_command(method: str) -> typer.models.CommandFunctionType:
             gp_console.error("Cannot use --session and --no-session together.")
             raise typer.Exit(1)
 
+        if profile is not None and profile not in _PROFILE_METHODS:
+            gp_console.error(
+                f"Unknown profile '{profile}'. Choose from: {', '.join(sorted(_PROFILE_METHODS))}."
+            )
+            raise typer.Exit(1)
+
         resolved_json: str | None = None
         if json_body is not None:
             resolved_json = _resolve_json_body(json_body)
@@ -349,6 +401,7 @@ def _http_command(method: str) -> typer.models.CommandFunctionType:
             session_name=session,
             no_session=no_session,
             browser_headers=not no_browser_headers,
+            profile=profile,
             json_body=resolved_json,
             form_data=data,
             extra_headers=header,
