@@ -1,10 +1,10 @@
-"""Header profile classification and extraction from CDP request data."""
+"""Header role classification and extraction from CDP request data."""
 
 from __future__ import annotations
 
 from typing import Any
 
-# Headers excluded from profiles: request-specific (cookie, host, referer, origin,
+# Headers excluded from roles: request-specific (cookie, host, referer, origin,
 # content-length, content-type) or HTTP/2 pseudo-headers (managed by transport layer)
 EXCLUDED_HEADERS: frozenset[str] = frozenset(
     {
@@ -23,7 +23,7 @@ EXCLUDED_HEADERS: frozenset[str] = frozenset(
 
 
 def classify_request(headers: dict[str, str]) -> str | None:
-    """Classify a request into a header profile based on its headers.
+    """Classify a request into a header role based on its headers.
 
     Classification priority:
     1. sec-fetch-mode (most reliable — Chrome always sends it)
@@ -34,7 +34,7 @@ def classify_request(headers: dict[str, str]) -> str | None:
         headers: Request headers dict (case-insensitive keys expected from CDP).
 
     Returns:
-        Profile name ("navigation", "xhr", or "form"), or None if not classifiable.
+        Role name ("navigation", "xhr", or "form"), or None if not classifiable.
     """
     # Normalize header keys to lowercase for comparison
     lower = {k.lower(): v for k, v in headers.items()}
@@ -65,36 +65,36 @@ def classify_request(headers: dict[str, str]) -> str | None:
     return None
 
 
-def extract_header_profiles(
+def extract_header_roles(
     request_map: dict[str, dict[str, Any]],
 ) -> dict[str, dict[str, str]]:
-    """Extract header profiles from a capture backend's request map.
+    """Extract header roles from a capture backend's request map.
 
     Iterates all captured requests, classifies each, and stores the full
     header set (minus excluded headers) from the first matching request
-    per profile.
+    per role.
 
     Args:
         request_map: The capture backend's _request_map dict. Each entry
             has at least a "headers" key with the request header dict.
 
     Returns:
-        Dict mapping profile name to header dict, e.g.
+        Dict mapping role name to header dict, e.g.
         {"navigation": {"User-Agent": "...", ...}, "xhr": {...}}.
     """
-    profiles: dict[str, dict[str, str]] = {}
+    roles: dict[str, dict[str, str]] = {}
 
     for _request_id, data in request_map.items():
         headers = data.get("headers", {})
         if not headers:
             continue
 
-        profile = classify_request(headers)
-        if profile is None or profile in profiles:
+        role = classify_request(headers)
+        if role is None or role in roles:
             continue
 
         # Store all headers except excluded ones
         filtered = {k: v for k, v in headers.items() if k.lower() not in EXCLUDED_HEADERS}
-        profiles[profile] = filtered
+        roles[role] = filtered
 
-    return profiles
+    return roles

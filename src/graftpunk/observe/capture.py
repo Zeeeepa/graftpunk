@@ -204,8 +204,8 @@ class CaptureBackend(Protocol):
         """
         ...
 
-    def get_header_profiles(self) -> dict[str, dict[str, str]]:
-        """Return header profiles classified from captured requests."""
+    def get_header_roles(self) -> dict[str, dict[str, str]]:
+        """Return header roles classified from captured requests."""
         ...
 
     async def take_screenshot(self) -> bytes | None:
@@ -412,11 +412,11 @@ class SeleniumCaptureBackend:
         """
         return self._console_logs
 
-    def get_header_profiles(self) -> dict[str, dict[str, str]]:
-        """Return header profiles classified from captured network requests."""
-        from graftpunk.observe.headers import extract_header_profiles
+    def get_header_roles(self) -> dict[str, dict[str, str]]:
+        """Return header roles classified from captured network requests."""
+        from graftpunk.observe.headers import extract_header_roles
 
-        return extract_header_profiles(self._request_map)
+        return extract_header_roles(self._request_map)
 
     async def take_screenshot(self) -> bytes | None:
         """Take a screenshot asynchronously (wraps sync method)."""
@@ -506,11 +506,11 @@ class NodriverCaptureBackend:
         """
         return self._console_logs
 
-    def get_header_profiles(self) -> dict[str, dict[str, str]]:
-        """Return header profiles classified from captured network requests."""
-        from graftpunk.observe.headers import extract_header_profiles
+    def get_header_roles(self) -> dict[str, dict[str, str]]:
+        """Return header roles classified from captured network requests."""
+        from graftpunk.observe.headers import extract_header_roles
 
-        return extract_header_profiles(self._request_map)
+        return extract_header_roles(self._request_map)
 
     async def take_screenshot(self) -> bytes | None:
         """Take a screenshot asynchronously via nodriver.

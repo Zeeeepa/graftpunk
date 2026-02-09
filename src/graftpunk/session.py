@@ -527,7 +527,7 @@ class BrowserSession(requestium.Session):
                 except Exception as exc:  # noqa: BLE001
                     LOG.debug("url_capture_failed_during_serialization", error=str(exc))
             state["current_url"] = current_url
-            state["_gp_header_profiles"] = getattr(self, "_gp_header_profiles", {})
+            state["_gp_header_roles"] = getattr(self, "_gp_header_roles", {})
             state[_GP_CACHED_TOKENS] = getattr(self, _GP_CACHED_TOKENS, {})
             return state
 
@@ -555,7 +555,7 @@ class BrowserSession(requestium.Session):
         # Backend abstraction state
         state["_backend_type"] = backend_type
         state["_use_stealth"] = getattr(self, "_use_stealth", True)
-        state["_gp_header_profiles"] = getattr(self, "_gp_header_profiles", {})
+        state["_gp_header_roles"] = getattr(self, "_gp_header_roles", {})
         state[_GP_CACHED_TOKENS] = getattr(self, _GP_CACHED_TOKENS, {})
         return state
 
@@ -569,7 +569,7 @@ class BrowserSession(requestium.Session):
         Args:
             state: State dictionary containing serialized session data with keys
                 like 'cookies', 'headers', '_backend_type', '_use_stealth',
-                '_gp_header_profiles', '_gp_cached_tokens', and other session
+                '_gp_header_roles', '_gp_cached_tokens', and other session
                 configuration.
 
         Raises:
@@ -596,7 +596,7 @@ class BrowserSession(requestium.Session):
             if "session_name" in state:
                 self._session_name = state["session_name"]
             self._backend_instance = None  # No browser restored
-            self._gp_header_profiles = state.get("_gp_header_profiles", {})
+            self._gp_header_roles = state.get("_gp_header_roles", {})
             self._gp_cached_tokens = state.get(_GP_CACHED_TOKENS, {})
         else:
             # Selenium/requestium path
@@ -607,7 +607,7 @@ class BrowserSession(requestium.Session):
             # in case a future requestium version overrides __setstate__.
             super().__setstate__(state)
             self.__dict__.update(state)
-            self._gp_header_profiles = state.get("_gp_header_profiles", {})
+            self._gp_header_roles = state.get("_gp_header_roles", {})
             self._gp_cached_tokens = state.get(_GP_CACHED_TOKENS, {})
 
             # Only transfer cookies to driver if we have one

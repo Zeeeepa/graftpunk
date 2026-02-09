@@ -55,20 +55,30 @@ def _resolve_json_body(json_arg: str) -> str:
     return json_arg
 
 
-# CLI shorthand → internal profile name.
+# CLI shorthand → internal role name.
 # "navigate" is friendlier than "navigation" on the command line.
-_PROFILE_ALIASES: dict[str, str] = {
+_ROLE_ALIASES: dict[str, str] = {
     "navigate": "navigation",
 }
 
 
-def _resolve_profile_name(name: str) -> str:
-    """Resolve a CLI profile name to the internal profile name.
+def _resolve_role_name(name: str) -> str:
+    """Resolve a CLI role name to the internal role name.
 
     Applies aliases (e.g. ``"navigate"`` → ``"navigation"``) and
     passes everything else through unchanged.
     """
-    return _PROFILE_ALIASES.get(name, name)
+    return _ROLE_ALIASES.get(name, name)
+
+
+def _role_help_text() -> str:
+    """Build dynamic help text for ``--role`` showing registered roles."""
+    from graftpunk.graftpunk_session import list_roles
+
+    names = list_roles()
+    if names:
+        return f"Header role ({', '.join(names)}, or plugin-defined)."
+    return "Header role (xhr, navigate, form, or plugin-defined)."
 
 
 def _dispatch_request(
@@ -76,30 +86,30 @@ def _dispatch_request(
     method: str,
     url: str,
     *,
-    profile: str | None = None,
+    role: str | None = None,
     **kwargs: object,
 ) -> requests.Response:
-    """Dispatch a request using a profile or plain ``session.request()``.
+    """Dispatch a request using a role or plain ``session.request()``.
 
-    When *profile* is set and the session supports profiles
+    When *role* is set and the session supports roles
     (i.e. is a ``GraftpunkSession``), delegates to
-    ``session.request_with_profile()``.  This works for built-in
-    profiles (xhr, navigation, form) **and** any custom profiles
+    ``session.request_with_role()``.  This works for built-in
+    roles (xhr, navigation, form) **and** any custom roles
     registered by plugins.
 
     Args:
         session: The session to use.
         method: HTTP method.
         url: Target URL.
-        profile: Header profile name — built-in or custom.
+        role: Header role name — built-in or custom.
         **kwargs: Passed through to the request method.
 
     Returns:
         The HTTP response.
     """
-    if profile is not None and hasattr(session, "request_with_profile"):
-        resolved = _resolve_profile_name(profile)
-        return session.request_with_profile(resolved, method, url, **kwargs)
+    if role is not None and hasattr(session, "request_with_role"):
+        resolved = _resolve_role_name(role)
+        return session.request_with_role(resolved, method, url, **kwargs)
     return session.request(method, url, **kwargs)
 
 
@@ -110,7 +120,7 @@ def _make_request(
     session_name: str | None = None,
     no_session: bool = False,
     browser_headers: bool = True,
-    profile: str | None = None,
+    role: str | None = None,
     json_body: str | None = None,
     form_data: str | None = None,
     extra_headers: list[str] | None = None,
@@ -123,12 +133,12 @@ def _make_request(
         url: Target URL.
         session_name: Session name to load. Falls back to ``resolve_session()``.
         no_session: When True, use a bare ``requests.Session`` without cookies.
-        browser_headers: Whether to keep auto-detected browser header profiles.
-            When False, clears ``_gp_header_profiles`` so the session sends
+        browser_headers: Whether to keep auto-detected browser header roles.
+            When False, clears ``_gp_header_roles`` so the session sends
             only its base headers.
-        profile: Header profile to use — built-in (``"xhr"``,
+        role: Header role to use — built-in (``"xhr"``,
             ``"navigate"``, ``"form"``) or any custom name defined by
-            a plugin's ``header_profiles`` dict.  Requires a
+            a plugin's ``header_roles`` dict.  Requires a
             ``GraftpunkSession``.  When None, falls back to
             ``session.request()`` (default behavior).
         json_body: JSON string body (mutually exclusive with form_data).
@@ -162,8 +172,8 @@ def _make_request(
             gp_console.error(f"Failed to load session '{resolved}': {exc}")
             raise typer.Exit(1) from exc
 
-    if not browser_headers and hasattr(session, "_gp_header_profiles"):
-        session._gp_header_profiles = {}  # type: ignore[assignment]
+    if not browser_headers and hasattr(session, "_gp_header_roles"):
+        session._gp_header_roles = {}  # type: ignore[assignment]
 
     # Apply extra headers from --header flags
     for header_str in extra_headers or []:
@@ -195,14 +205,14 @@ def _make_request(
         base_url = getattr(plugin, "base_url", "")
         prepare_session(session, token_config, base_url)
 
-    # Merge plugin-defined header profiles into the session so that
-    # --profile can reference custom names declared by the plugin.
-    plugin_profiles = getattr(plugin, "header_profiles", None) if plugin else None
-    if plugin_profiles and hasattr(session, "_gp_header_profiles"):
-        session._gp_header_profiles.update(plugin_profiles)
+    # Merge plugin-defined header roles into the session so that
+    # --role can reference custom names declared by the plugin.
+    plugin_roles = getattr(plugin, "header_roles", None) if plugin else None
+    if plugin_roles and hasattr(session, "_gp_header_roles"):
+        session._gp_header_roles.update(plugin_roles)
 
     try:
-        response = _dispatch_request(session, method, url, profile=profile, **kwargs)
+        response = _dispatch_request(session, method, url, role=role, **kwargs)
     except requests.exceptions.ConnectionError as exc:
         gp_console.error(f"Connection failed: {exc}")
         raise typer.Exit(1) from exc
@@ -227,7 +237,7 @@ def _make_request(
             gp_console.error(f"Token refresh failed: {exc}")
             return response  # Return the original 403 response
         try:
-            response = _dispatch_request(session, method, url, profile=profile, **kwargs)
+            response = _dispatch_request(session, method, url, role=role, **kwargs)
         except requests.exceptions.RequestException as exc:
             gp_console.error(f"Retry request failed: {exc}")
             raise typer.Exit(1) from exc
@@ -374,11 +384,11 @@ def _http_command(method: str) -> typer.models.CommandFunctionType:
             list[str] | None,
             typer.Option("--header", "-H", help="Extra header(s), format 'Name: value'"),
         ] = None,
-        profile: Annotated[
+        role: Annotated[
             str | None,
             typer.Option(
-                "--profile",
-                help="Header profile (xhr, navigate, form, or plugin-defined).",
+                "--role",
+                help=_role_help_text(),
             ),
         ] = None,
         no_browser_headers: Annotated[
@@ -406,8 +416,8 @@ def _http_command(method: str) -> typer.models.CommandFunctionType:
             gp_console.error("Cannot use --session and --no-session together.")
             raise typer.Exit(1)
 
-        if profile is not None and no_session:
-            gp_console.error("--profile requires a session (profiles need a GraftpunkSession).")
+        if role is not None and no_session:
+            gp_console.error("--role requires a session (roles need a GraftpunkSession).")
             raise typer.Exit(1)
 
         resolved_json: str | None = None
@@ -420,7 +430,7 @@ def _http_command(method: str) -> typer.models.CommandFunctionType:
             session_name=session,
             no_session=no_session,
             browser_headers=not no_browser_headers,
-            profile=profile,
+            role=role,
             json_body=resolved_json,
             form_data=data,
             extra_headers=header,

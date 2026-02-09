@@ -599,7 +599,7 @@ class TestLoadSessionForApiGraftpunkSession:
     """Tests for load_session_for_api returning GraftpunkSession."""
 
     def test_load_session_for_api_returns_graftpunk_session(self, monkeypatch):
-        """load_session_for_api should return GraftpunkSession when profiles exist."""
+        """load_session_for_api should return GraftpunkSession when roles exist."""
         import requests
 
         from graftpunk.graftpunk_session import GraftpunkSession
@@ -607,15 +607,15 @@ class TestLoadSessionForApiGraftpunkSession:
         mock_session = MagicMock()
         mock_session.cookies = requests.cookies.RequestsCookieJar()
         mock_session.headers = {"User-Agent": "test"}
-        mock_session._gp_header_profiles = {"navigation": {"User-Agent": "Browser"}}
+        mock_session._gp_header_roles = {"navigation": {"User-Agent": "Browser"}}
         monkeypatch.setattr("graftpunk.cache.load_session", lambda name: mock_session)
 
         api_session = load_session_for_api("test")
         assert isinstance(api_session, GraftpunkSession)
-        assert api_session._gp_header_profiles == {"navigation": {"User-Agent": "Browser"}}
+        assert api_session._gp_header_roles == {"navigation": {"User-Agent": "Browser"}}
 
-    def test_load_session_for_api_no_profiles_returns_graftpunk_session(self, monkeypatch):
-        """load_session_for_api returns GraftpunkSession even without profiles."""
+    def test_load_session_for_api_no_roles_returns_graftpunk_session(self, monkeypatch):
+        """load_session_for_api returns GraftpunkSession even without roles."""
         import requests
 
         from graftpunk.graftpunk_session import GraftpunkSession
@@ -623,13 +623,13 @@ class TestLoadSessionForApiGraftpunkSession:
         mock_session = MagicMock()
         mock_session.cookies = requests.cookies.RequestsCookieJar()
         mock_session.headers = {"User-Agent": "test"}
-        # Simulate old session without _gp_header_profiles attribute
-        del mock_session._gp_header_profiles
+        # Simulate old session without _gp_header_roles attribute
+        del mock_session._gp_header_roles
         monkeypatch.setattr("graftpunk.cache.load_session", lambda name: mock_session)
 
         api_session = load_session_for_api("test")
         assert isinstance(api_session, GraftpunkSession)
-        assert api_session._gp_header_profiles == {}
+        assert api_session._gp_header_roles == {}
 
     def test_load_session_for_api_copies_token_cache(self, monkeypatch):
         """Token cache is transferred from browser session to API session."""
@@ -640,7 +640,7 @@ class TestLoadSessionForApiGraftpunkSession:
         mock_session = MagicMock()
         mock_session.cookies = requests.cookies.RequestsCookieJar()
         mock_session.headers = {"User-Agent": "test"}
-        mock_session._gp_header_profiles = {}
+        mock_session._gp_header_roles = {}
 
         token_cache = {
             "X-CSRF": CachedToken(name="X-CSRF", value="tok123", extracted_at=1000, ttl=300)
@@ -653,7 +653,7 @@ class TestLoadSessionForApiGraftpunkSession:
         assert getattr(api_session, _CACHE_ATTR) == token_cache
 
     def test_load_session_for_api_browser_identity_not_clobbered(self, monkeypatch):
-        """Browser identity headers from profiles must survive browser_session.headers copy.
+        """Browser identity headers from roles must survive browser_session.headers copy.
 
         Regression test for #52: load_session_for_api copied browser_session.headers
         (which contains python-requests defaults) on top of the Chrome UA that
@@ -666,7 +666,7 @@ class TestLoadSessionForApiGraftpunkSession:
         # Simulate a real pickled BrowserSession: its headers dict contains
         # the requests library default User-Agent.
         mock_session.headers = requests.utils.default_headers()
-        mock_session._gp_header_profiles = {
+        mock_session._gp_header_roles = {
             "navigation": {
                 "User-Agent": "Mozilla/5.0 Chrome/144.0.0.0",
                 "Accept": "text/html",
@@ -678,7 +678,7 @@ class TestLoadSessionForApiGraftpunkSession:
 
         api_session = load_session_for_api("test")
 
-        # The Chrome UA from profiles must win, not python-requests default
+        # The Chrome UA from roles must win, not python-requests default
         assert api_session.headers["User-Agent"] == "Mozilla/5.0 Chrome/144.0.0.0"
         assert api_session.headers["sec-ch-ua"] == '"Chromium";v="144"'
 
@@ -693,7 +693,7 @@ class TestLoadSessionForApiGraftpunkSession:
             "X-Custom-Header": "custom-value",
             "User-Agent": "CustomBot/1.0",  # explicitly set, not requests default
         }
-        mock_session._gp_header_profiles = {}
+        mock_session._gp_header_roles = {}
         del mock_session._gp_cached_tokens
         monkeypatch.setattr("graftpunk.cache.load_session", lambda name: mock_session)
 
@@ -710,7 +710,7 @@ class TestLoadSessionForApiGraftpunkSession:
         mock_session = MagicMock()
         mock_session.cookies = requests.cookies.RequestsCookieJar()
         mock_session.headers = {"User-Agent": "test"}
-        mock_session._gp_header_profiles = {}
+        mock_session._gp_header_roles = {}
         # No _gp_cached_tokens attribute
         del mock_session._gp_cached_tokens
         del mock_session._gp_csrf_tokens
@@ -730,7 +730,7 @@ class TestLoadSessionForApiGraftpunkSession:
         mock_session = MagicMock()
         mock_session.cookies = requests.cookies.RequestsCookieJar()
         mock_session.headers = {"User-Agent": "test"}
-        mock_session._gp_header_profiles = {}
+        mock_session._gp_header_roles = {}
         del mock_session._gp_cached_tokens
 
         csrf_tokens = {"X-CSRF": "secret123", "X-Token": "abc"}
@@ -752,7 +752,7 @@ class TestLoadSessionForApiGraftpunkSession:
         mock_session = MagicMock()
         mock_session.cookies = requests.cookies.RequestsCookieJar()
         mock_session.headers = {"User-Agent": "test"}
-        mock_session._gp_header_profiles = {}
+        mock_session._gp_header_roles = {}
         del mock_session._gp_cached_tokens
 
         setattr(mock_session, _CSRF_TOKENS_ATTR, {})

@@ -9,12 +9,12 @@ import pytest
 import requests
 
 from graftpunk.cli.http_commands import (
-    _PROFILE_ALIASES,
+    _ROLE_ALIASES,
     _dispatch_request,
     _make_request,
     _print_response,
     _resolve_json_body,
-    _resolve_profile_name,
+    _resolve_role_name,
     _save_observe_data,
 )
 
@@ -90,10 +90,10 @@ class TestMakeRequest:
     @patch("graftpunk.cli.http_commands.load_session_for_api")
     @patch("graftpunk.cli.plugin_commands._registered_plugins_for_teardown", [])
     @patch("graftpunk.cli.plugin_commands._plugin_session_map", {})
-    def test_no_browser_headers_clears_profiles(self, mock_load: MagicMock) -> None:
+    def test_no_browser_headers_clears_roles(self, mock_load: MagicMock) -> None:
         mock_session = MagicMock(spec=requests.Session)
         mock_session.headers = {}
-        mock_session._gp_header_profiles = {"navigation": {"User-Agent": "Test"}}
+        mock_session._gp_header_roles = {"navigation": {"User-Agent": "Test"}}
         mock_response = MagicMock(spec=requests.Response)
         mock_response.status_code = 200
         mock_session.request.return_value = mock_response
@@ -106,8 +106,8 @@ class TestMakeRequest:
             browser_headers=False,
         )
 
-        # Header profiles should have been cleared
-        assert mock_session._gp_header_profiles == {}
+        # Header roles should have been cleared
+        assert mock_session._gp_header_roles == {}
 
     @patch("graftpunk.cli.http_commands.load_session_for_api")
     @patch("graftpunk.cli.plugin_commands._registered_plugins_for_teardown", [])
@@ -419,7 +419,7 @@ class TestHttpCommandCLI:
 class TestDispatchRequest:
     """Tests for _dispatch_request."""
 
-    def test_no_profile_uses_session_request(self) -> None:
+    def test_no_role_uses_session_request(self) -> None:
         mock_session = MagicMock()
         mock_response = MagicMock(spec=requests.Response)
         mock_session.request.return_value = mock_response
@@ -429,16 +429,16 @@ class TestDispatchRequest:
         mock_session.request.assert_called_once_with("GET", "https://example.com", timeout=30)
         assert result == mock_response
 
-    def test_xhr_profile_calls_request_with_profile(self) -> None:
+    def test_xhr_role_calls_request_with_role(self) -> None:
         mock_session = MagicMock()
         mock_response = MagicMock(spec=requests.Response)
-        mock_session.request_with_profile.return_value = mock_response
+        mock_session.request_with_role.return_value = mock_response
 
         result = _dispatch_request(
-            mock_session, "GET", "https://example.com/api", profile="xhr", timeout=30
+            mock_session, "GET", "https://example.com/api", role="xhr", timeout=30
         )
 
-        mock_session.request_with_profile.assert_called_once_with(
+        mock_session.request_with_role.assert_called_once_with(
             "xhr", "GET", "https://example.com/api", timeout=30
         )
         mock_session.request.assert_not_called()
@@ -447,88 +447,88 @@ class TestDispatchRequest:
     def test_navigate_alias_resolves_to_navigation(self) -> None:
         mock_session = MagicMock()
         mock_response = MagicMock(spec=requests.Response)
-        mock_session.request_with_profile.return_value = mock_response
+        mock_session.request_with_role.return_value = mock_response
 
         _dispatch_request(
-            mock_session, "GET", "https://example.com/page", profile="navigate", timeout=30
+            mock_session, "GET", "https://example.com/page", role="navigate", timeout=30
         )
 
-        mock_session.request_with_profile.assert_called_once_with(
+        mock_session.request_with_role.assert_called_once_with(
             "navigation", "GET", "https://example.com/page", timeout=30
         )
 
-    def test_form_profile_calls_request_with_profile(self) -> None:
+    def test_form_role_calls_request_with_role(self) -> None:
         mock_session = MagicMock()
         mock_response = MagicMock(spec=requests.Response)
-        mock_session.request_with_profile.return_value = mock_response
+        mock_session.request_with_role.return_value = mock_response
 
         result = _dispatch_request(
-            mock_session, "POST", "https://example.com/submit", profile="form", timeout=30
+            mock_session, "POST", "https://example.com/submit", role="form", timeout=30
         )
 
-        mock_session.request_with_profile.assert_called_once_with(
+        mock_session.request_with_role.assert_called_once_with(
             "form", "POST", "https://example.com/submit", timeout=30
         )
         assert result == mock_response
 
-    def test_custom_profile_passes_through(self) -> None:
-        """Custom profile names are passed directly to request_with_profile."""
+    def test_custom_role_passes_through(self) -> None:
+        """Custom role names are passed directly to request_with_role."""
         mock_session = MagicMock()
         mock_response = MagicMock(spec=requests.Response)
-        mock_session.request_with_profile.return_value = mock_response
+        mock_session.request_with_role.return_value = mock_response
 
         result = _dispatch_request(
-            mock_session, "GET", "https://example.com/api", profile="my-api", timeout=30
+            mock_session, "GET", "https://example.com/api", role="my-api", timeout=30
         )
 
-        mock_session.request_with_profile.assert_called_once_with(
+        mock_session.request_with_role.assert_called_once_with(
             "my-api", "GET", "https://example.com/api", timeout=30
         )
         assert result == mock_response
 
-    def test_profile_without_support_falls_back_to_request(self) -> None:
-        """Session without request_with_profile falls back to session.request()."""
+    def test_role_without_support_falls_back_to_request(self) -> None:
+        """Session without request_with_role falls back to session.request()."""
         mock_session = MagicMock(spec=requests.Session)
         mock_response = MagicMock(spec=requests.Response)
         mock_session.request.return_value = mock_response
 
         result = _dispatch_request(
-            mock_session, "GET", "https://example.com", profile="xhr", timeout=30
+            mock_session, "GET", "https://example.com", role="xhr", timeout=30
         )
 
         mock_session.request.assert_called_once_with("GET", "https://example.com", timeout=30)
         assert result == mock_response
 
 
-class TestMakeRequestWithProfile:
-    """Tests for _make_request with --profile flag."""
+class TestMakeRequestWithRole:
+    """Tests for _make_request with --role flag."""
 
     @patch("graftpunk.cli.http_commands.load_session_for_api")
     @patch("graftpunk.cli.plugin_commands._registered_plugins_for_teardown", [])
     @patch("graftpunk.cli.plugin_commands._plugin_session_map", {})
-    def test_profile_xhr_dispatches_via_request_with_profile(self, mock_load: MagicMock) -> None:
+    def test_role_xhr_dispatches_via_request_with_role(self, mock_load: MagicMock) -> None:
         mock_session = MagicMock()
         mock_session.headers = {}
         mock_response = MagicMock(spec=requests.Response)
         mock_response.status_code = 200
-        mock_session.request_with_profile.return_value = mock_response
+        mock_session.request_with_role.return_value = mock_response
         mock_load.return_value = mock_session
 
         response = _make_request(
             "GET",
             "https://example.com/api",
             session_name="test-session",
-            profile="xhr",
+            role="xhr",
         )
 
-        mock_session.request_with_profile.assert_called_once()
+        mock_session.request_with_role.assert_called_once()
         mock_session.request.assert_not_called()
         assert response == mock_response
 
     @patch("graftpunk.cli.http_commands.load_session_for_api")
     @patch("graftpunk.cli.plugin_commands._registered_plugins_for_teardown", [])
     @patch("graftpunk.cli.plugin_commands._plugin_session_map", {})
-    def test_profile_none_uses_session_request(self, mock_load: MagicMock) -> None:
+    def test_role_none_uses_session_request(self, mock_load: MagicMock) -> None:
         mock_session = MagicMock()
         mock_session.headers = {}
         mock_response = MagicMock(spec=requests.Response)
@@ -546,21 +546,21 @@ class TestMakeRequestWithProfile:
         assert response == mock_response
 
     @patch("graftpunk.cli.http_commands.load_session_for_api")
-    def test_plugin_header_profiles_merged_into_session(self, mock_load: MagicMock) -> None:
-        """Plugin's header_profiles dict is merged into session._gp_header_profiles."""
+    def test_plugin_header_roles_merged_into_session(self, mock_load: MagicMock) -> None:
+        """Plugin's header_roles dict is merged into session._gp_header_roles."""
         mock_session = MagicMock()
         mock_session.headers = {}
-        mock_session._gp_header_profiles = {"xhr": {"Accept": "application/json"}}
+        mock_session._gp_header_roles = {"xhr": {"Accept": "application/json"}}
         mock_response = MagicMock(spec=requests.Response)
         mock_response.status_code = 200
-        mock_session.request_with_profile.return_value = mock_response
+        mock_session.request_with_role.return_value = mock_response
         mock_load.return_value = mock_session
 
         mock_plugin = MagicMock()
         mock_plugin.site_name = "test-plugin"
         mock_plugin.base_url = "https://example.com"
         mock_plugin.token_config = None
-        mock_plugin.header_profiles = {
+        mock_plugin.header_roles = {
             "api": {"Accept": "application/json", "X-API-Version": "2"},
         }
 
@@ -578,18 +578,18 @@ class TestMakeRequestWithProfile:
                 "GET",
                 "https://example.com/api",
                 session_name="test-session",
-                profile="api",
+                role="api",
             )
 
-        # Plugin's "api" profile should have been merged into session
-        assert "api" in mock_session._gp_header_profiles
-        assert mock_session._gp_header_profiles["api"]["X-API-Version"] == "2"
+        # Plugin's "api" role should have been merged into session
+        assert "api" in mock_session._gp_header_roles
+        assert mock_session._gp_header_roles["api"]["X-API-Version"] == "2"
 
 
-class TestProfileCLI:
-    """CLI-level tests for --profile flag."""
+class TestRoleCLI:
+    """CLI-level tests for --role flag."""
 
-    def test_profile_flag_in_help(self) -> None:
+    def test_role_flag_in_help(self) -> None:
         import re
 
         from typer.testing import CliRunner
@@ -600,10 +600,10 @@ class TestProfileCLI:
         result = runner.invoke(app, ["http", "get", "--help"])
         assert result.exit_code == 0
         output = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
-        assert "--profile" in output
+        assert "--role" in output
 
-    def test_profile_with_no_session_exits_with_error(self) -> None:
-        """--profile requires a session (GraftpunkSession)."""
+    def test_role_with_no_session_exits_with_error(self) -> None:
+        """--role requires a session (GraftpunkSession)."""
         import re
 
         from typer.testing import CliRunner
@@ -613,13 +613,13 @@ class TestProfileCLI:
         runner = CliRunner()
         result = runner.invoke(
             app,
-            ["http", "get", "--no-session", "--profile", "xhr", "https://example.com"],
+            ["http", "get", "--no-session", "--role", "xhr", "https://example.com"],
         )
         assert result.exit_code == 1
         output = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
-        assert "--profile requires a session" in output
+        assert "--role requires a session" in output
 
-    def test_profile_xhr_via_cli(self) -> None:
+    def test_role_xhr_via_cli(self) -> None:
         from typer.testing import CliRunner
 
         from graftpunk.cli.main import app
@@ -639,7 +639,7 @@ class TestProfileCLI:
 
         mock_session = MagicMock()
         mock_session.headers = {}
-        mock_session.request_with_profile.return_value = mock_response
+        mock_session.request_with_role.return_value = mock_response
 
         with (
             patch("graftpunk.cli.http_commands.load_session_for_api", return_value=mock_session),
@@ -654,33 +654,33 @@ class TestProfileCLI:
                     "get",
                     "--session",
                     "test-session",
-                    "--profile",
+                    "--role",
                     "xhr",
                     "https://example.com/api",
                 ],
             )
 
         assert result.exit_code == 0
-        mock_session.request_with_profile.assert_called_once()
+        mock_session.request_with_role.assert_called_once()
 
 
-class TestResolveProfileName:
-    """Tests for _resolve_profile_name and _PROFILE_ALIASES."""
+class TestResolveRoleName:
+    """Tests for _resolve_role_name and _ROLE_ALIASES."""
 
     def test_navigate_resolves_to_navigation(self) -> None:
-        assert _resolve_profile_name("navigate") == "navigation"
+        assert _resolve_role_name("navigate") == "navigation"
 
     def test_xhr_passes_through(self) -> None:
-        assert _resolve_profile_name("xhr") == "xhr"
+        assert _resolve_role_name("xhr") == "xhr"
 
     def test_form_passes_through(self) -> None:
-        assert _resolve_profile_name("form") == "form"
+        assert _resolve_role_name("form") == "form"
 
     def test_custom_name_passes_through(self) -> None:
-        assert _resolve_profile_name("my-custom-api") == "my-custom-api"
+        assert _resolve_role_name("my-custom-api") == "my-custom-api"
 
     def test_aliases_only_contains_navigate(self) -> None:
-        assert _PROFILE_ALIASES == {"navigate": "navigation"}
+        assert _ROLE_ALIASES == {"navigate": "navigation"}
 
 
 def test_default_browser_headers_removed() -> None:

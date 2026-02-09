@@ -1502,11 +1502,11 @@ class TestStopObserveAsync:
         mock_capture.stop_capture_async.assert_awaited_once()
 
 
-class TestHeaderProfilesSerialization:
-    """Tests for _gp_header_profiles roundtrip through __getstate__/__setstate__."""
+class TestHeaderRolesSerialization:
+    """Tests for _gp_header_roles round-trip through __getstate__/__setstate__."""
 
-    def test_getstate_includes_gp_header_profiles_nodriver(self):
-        """__getstate__ should include _gp_header_profiles for nodriver sessions."""
+    def test_getstate_includes_gp_header_roles_nodriver(self):
+        """__getstate__ should include _gp_header_roles for nodriver sessions."""
         from graftpunk.session import BrowserSession
 
         with patch.object(BrowserSession, "__init__", return_value=None):
@@ -1520,12 +1520,12 @@ class TestHeaderProfilesSerialization:
 
             requests.Session.__init__(session)
 
-            session._gp_header_profiles = {"navigation": {"User-Agent": "Test"}}
+            session._gp_header_roles = {"navigation": {"User-Agent": "Test"}}
             state = session.__getstate__()
-            assert state.get("_gp_header_profiles") == {"navigation": {"User-Agent": "Test"}}
+            assert state.get("_gp_header_roles") == {"navigation": {"User-Agent": "Test"}}
 
-    def test_getstate_default_empty_profiles_nodriver(self):
-        """__getstate__ returns empty dict when no profiles set."""
+    def test_getstate_default_empty_roles_nodriver(self):
+        """__getstate__ returns empty dict when no roles set."""
         from graftpunk.session import BrowserSession
 
         with patch.object(BrowserSession, "__init__", return_value=None):
@@ -1540,10 +1540,10 @@ class TestHeaderProfilesSerialization:
             requests.Session.__init__(session)
 
             state = session.__getstate__()
-            assert state.get("_gp_header_profiles") == {}
+            assert state.get("_gp_header_roles") == {}
 
-    def test_setstate_restores_gp_header_profiles_nodriver(self):
-        """__setstate__ should restore _gp_header_profiles for nodriver."""
+    def test_setstate_restores_gp_header_roles_nodriver(self):
+        """__setstate__ should restore _gp_header_roles for nodriver."""
         from graftpunk.session import BrowserSession
 
         with patch.object(BrowserSession, "__init__", return_value=None):
@@ -1557,17 +1557,17 @@ class TestHeaderProfilesSerialization:
 
             requests.Session.__init__(session)
 
-            profiles = {"xhr": {"Accept": "application/json"}}
-            session._gp_header_profiles = profiles
+            roles = {"xhr": {"Accept": "application/json"}}
+            session._gp_header_roles = roles
             state = session.__getstate__()
 
             # Create a new session and restore state
             new_session = requests.Session.__new__(type(session))
             new_session.__setstate__(state)
-            assert getattr(new_session, "_gp_header_profiles", None) == profiles
+            assert getattr(new_session, "_gp_header_roles", None) == roles
 
-    def test_getstate_includes_gp_header_profiles_selenium(self):
-        """__getstate__ should include _gp_header_profiles for selenium sessions."""
+    def test_getstate_includes_gp_header_roles_selenium(self):
+        """__getstate__ should include _gp_header_roles for selenium sessions."""
         from graftpunk.session import BrowserSession
 
         with patch.object(BrowserSession, "__init__", return_value=None):
@@ -1594,35 +1594,35 @@ class TestHeaderProfilesSerialization:
             session._driver = mock_driver
             session._webdriver = mock_driver
 
-            session._gp_header_profiles = {"navigation": {"Accept": "text/html"}}
+            session._gp_header_roles = {"navigation": {"Accept": "text/html"}}
 
             with patch("requestium.Session.__getstate__", return_value={}):
                 state = session.__getstate__()
 
-            assert state.get("_gp_header_profiles") == {"navigation": {"Accept": "text/html"}}
+            assert state.get("_gp_header_roles") == {"navigation": {"Accept": "text/html"}}
 
-    def test_setstate_restores_gp_header_profiles_selenium(self):
-        """__setstate__ should restore _gp_header_profiles for selenium."""
+    def test_setstate_restores_gp_header_roles_selenium(self):
+        """__setstate__ should restore _gp_header_roles for selenium."""
         from graftpunk.session import BrowserSession
 
         with patch.object(BrowserSession, "__init__", return_value=None):
             session = BrowserSession.__new__(BrowserSession)
 
-            profiles = {"xhr": {"Accept": "application/json"}}
+            roles = {"xhr": {"Accept": "application/json"}}
             state = {
                 "_backend_type": "selenium",
                 "_use_stealth": True,
                 "_driver": None,
-                "_gp_header_profiles": profiles,
+                "_gp_header_roles": roles,
             }
 
             with patch("requestium.Session.__setstate__"):
                 session.__setstate__(state)
 
-            assert session._gp_header_profiles == profiles
+            assert session._gp_header_roles == roles
 
-    def test_setstate_defaults_empty_profiles_when_missing(self):
-        """__setstate__ defaults to empty dict when _gp_header_profiles not in state."""
+    def test_setstate_defaults_empty_roles_when_missing(self):
+        """__setstate__ defaults to empty dict when _gp_header_roles not in state."""
         from graftpunk.session import BrowserSession
 
         with patch.object(BrowserSession, "__init__", return_value=None):
@@ -1635,7 +1635,7 @@ class TestHeaderProfilesSerialization:
 
             session.__setstate__(state)
 
-            assert session._gp_header_profiles == {}
+            assert session._gp_header_roles == {}
 
 
 class TestTokenCacheSerialization:
