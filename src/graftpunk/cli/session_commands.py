@@ -15,7 +15,12 @@ from graftpunk import (
     load_session,
 )
 from graftpunk.cli.plugin_commands import resolve_session_name
-from graftpunk.exceptions import GraftpunkError, SessionExpiredError, SessionNotFoundError
+from graftpunk.exceptions import (
+    GraftpunkError,
+    SessionExpiredError,
+    SessionNotFoundError,
+    StorageError,
+)
 from graftpunk.session_context import clear_active_session, set_active_session
 
 if TYPE_CHECKING:
@@ -58,7 +63,7 @@ def session_list(
     backend_override = ctx.obj.get("storage_backend") if ctx.obj else None
     try:
         sessions = list_sessions_with_metadata(backend_override=backend_override)
-    except ValueError as exc:
+    except (ValueError, StorageError) as exc:
         console.print(f"[red]✗ Storage backend error: {exc}[/red]")
         raise typer.Exit(1) from None
 
@@ -145,7 +150,7 @@ def show(
     name = resolve_session_name(name)
     try:
         metadata = get_session_metadata(name, backend_override=backend_override)
-    except ValueError as exc:
+    except (ValueError, StorageError) as exc:
         console.print(f"[red]✗ Storage backend error: {exc}[/red]")
         raise typer.Exit(1) from None
 
@@ -206,7 +211,6 @@ def show(
 
 @session_app.command("export")
 def export(
-    ctx: typer.Context,
     name: Annotated[
         str,
         typer.Argument(
@@ -291,7 +295,7 @@ def session_clear(
         all_metadata = list_sessions_with_metadata(
             backend_override=backend_override,
         )
-    except ValueError as exc:
+    except (ValueError, StorageError) as exc:
         console.print(f"[red]✗ Storage backend error: {exc}[/red]")
         raise typer.Exit(1) from None
 
