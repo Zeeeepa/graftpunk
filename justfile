@@ -215,6 +215,52 @@ release: check
     echo "🔗 https://pypi.org/project/graftpunk/${VERSION}/"
 
 # --------------------------------------------------------------------------
+# Version Bump
+# --------------------------------------------------------------------------
+
+# Bump version, sync lockfile, commit, and open a PR
+bump VERSION:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    NEW="{{VERSION}}"
+
+    # Validate semver format
+    if ! echo "$NEW" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+        echo "❌ Invalid version: ${NEW} (expected X.Y.Z)"
+        exit 1
+    fi
+
+    OLD=$(grep '^version = ' pyproject.toml | head -1 | cut -d'"' -f2)
+    if [ "$OLD" = "$NEW" ]; then
+        echo "❌ Already at version ${NEW}"
+        exit 1
+    fi
+
+    echo "📦 Bumping ${OLD} → ${NEW}"
+
+    # Update pyproject.toml
+    sed -i '' "s/^version = \"${OLD}\"/version = \"${NEW}\"/" pyproject.toml
+
+    # Update __init__.py
+    sed -i '' "s/__version__ = \"${OLD}\"/__version__ = \"${NEW}\"/" src/graftpunk/__init__.py
+
+    # Update lockfile
+    uv lock --quiet
+    echo "✅ Updated pyproject.toml, __init__.py, uv.lock"
+
+    # Create branch, commit, and PR
+    BRANCH="chore/bump-v${NEW}"
+    git checkout -b "$BRANCH"
+    git add pyproject.toml src/graftpunk/__init__.py uv.lock
+    git commit -m "chore: bump version to ${NEW}"
+    git push -u origin "$BRANCH"
+    gh pr create --title "chore: bump version to ${NEW}" --body "Bump version ${OLD} → ${NEW} (pyproject.toml, __init__.py, uv.lock)"
+
+    echo ""
+    echo "✅ PR created for v${NEW}"
+
+# --------------------------------------------------------------------------
 # Utilities
 # --------------------------------------------------------------------------
 
