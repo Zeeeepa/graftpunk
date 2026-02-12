@@ -245,6 +245,15 @@ bump VERSION:
     # Update __init__.py
     sed -i '' "s/__version__ = \"${OLD}\"/__version__ = \"${NEW}\"/" src/graftpunk/__init__.py
 
+    # Update CHANGELOG: rename [Unreleased] to [X.Y.Z] with today's date
+    DATE=$(date +%Y-%m-%d)
+    if grep -q '## \[Unreleased\]' CHANGELOG.md; then
+        sed -i '' "s/## \[Unreleased\]/## [${NEW}] - ${DATE}/" CHANGELOG.md
+        echo "✅ CHANGELOG.md: [Unreleased] → [${NEW}] - ${DATE}"
+    else
+        echo "⚠️  No [Unreleased] section found in CHANGELOG.md — skipping"
+    fi
+
     # Update lockfile
     uv lock --quiet
     echo "✅ Updated pyproject.toml, __init__.py, uv.lock"
@@ -252,7 +261,7 @@ bump VERSION:
     # Create branch, commit, and PR
     BRANCH="chore/bump-v${NEW}"
     git checkout -b "$BRANCH"
-    git add pyproject.toml src/graftpunk/__init__.py uv.lock
+    git add pyproject.toml src/graftpunk/__init__.py uv.lock CHANGELOG.md
     git commit -m "chore: bump version to ${NEW}"
     git push -u origin "$BRANCH"
     gh pr create --title "chore: bump version to ${NEW}" --body "Bump version ${OLD} → ${NEW} (pyproject.toml, __init__.py, uv.lock)"
