@@ -57,6 +57,7 @@ htmlcov/
 .envrc.example
 Justfile.example
 lefthook.yml
+docs/plans
 
 # Claude Code automation (shadow mode - not tracked)
 # Synced from template repository for local AI assistance
