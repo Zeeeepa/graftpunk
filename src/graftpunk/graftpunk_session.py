@@ -530,6 +530,8 @@ class GraftpunkSession(requests.Session):
             return
         if (prepared.method or "GET").upper() not in _MUTATION_METHODS:
             return
+        if prepared.headers is None:
+            return
         for name, value in csrf_tokens.items():
             prepared.headers.setdefault(name, value)
 

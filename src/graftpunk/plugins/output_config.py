@@ -77,7 +77,7 @@ class OutputConfig:
         view_names = [v.name for v in self.views]
         if len(view_names) != len(set(view_names)):
             seen = set()
-            duplicates = [n for n in view_names if n in seen or seen.add(n)]  # type: ignore[func-returns-value]
+            duplicates = [n for n in view_names if n in seen or seen.add(n)]
             raise ValueError(f"Duplicate view names: {duplicates}")
         # Validate default_view references existing view
         if self.default_view and self.default_view not in view_names:
@@ -205,6 +205,7 @@ def extract_view_data(data: Any, path: str) -> Any:
 
     try:
         import jmespath
+        import jmespath.exceptions
 
         try:
             result = jmespath.search(path, data)
