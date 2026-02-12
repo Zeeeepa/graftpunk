@@ -314,7 +314,7 @@ def _save_observe_data(
 
         if request_body:
             har_entry["request"] = {
-                **har_entry["request"],  # type: ignore[arg-type]
+                **har_entry["request"],
                 "postData": {
                     "mimeType": response.request.headers.get("Content-Type", ""),  # type: ignore[union-attribute]
                     "text": request_body,
