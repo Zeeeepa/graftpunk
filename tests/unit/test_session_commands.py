@@ -7,6 +7,7 @@ from unittest.mock import patch
 from typer.testing import CliRunner
 
 from graftpunk.cli.session_commands import session_app
+from graftpunk.exceptions import StorageError
 
 runner = CliRunner()
 
@@ -189,3 +190,71 @@ class TestStorageBackendFlag:
         output = strip_ansi(result.output)
         assert "Storage backend error" in output
         assert "Missing GRAFTPUNK_S3_BUCKET" in output
+
+    @patch("graftpunk.cli.session_commands.list_sessions_with_metadata")
+    def test_list_storage_error_shows_friendly_message(self, mock_list) -> None:
+        """StorageError from backend produces friendly error, not a traceback."""
+        mock_list.side_effect = StorageError("S3 connection refused")
+
+        result = runner.invoke(session_app, ["--storage-backend", "s3", "list"])
+
+        assert result.exit_code == 1
+        output = strip_ansi(result.output)
+        assert "Storage backend error" in output
+        assert "S3 connection refused" in output
+
+
+class TestShowErrorHandling:
+    """Tests for error handling in session show command."""
+
+    @patch("graftpunk.cli.session_commands.get_session_metadata")
+    @patch("graftpunk.cli.session_commands.resolve_session_name", side_effect=lambda n: n)
+    def test_show_value_error_shows_friendly_message(self, _mock_resolve, mock_get) -> None:
+        """ValueError from backend produces friendly error."""
+        mock_get.side_effect = ValueError("Missing GRAFTPUNK_S3_BUCKET")
+
+        result = runner.invoke(session_app, ["--storage-backend", "s3", "show", "mysite"])
+
+        assert result.exit_code == 1
+        output = strip_ansi(result.output)
+        assert "Storage backend error" in output
+
+    @patch("graftpunk.cli.session_commands.get_session_metadata")
+    @patch("graftpunk.cli.session_commands.resolve_session_name", side_effect=lambda n: n)
+    def test_show_storage_error_shows_friendly_message(self, _mock_resolve, mock_get) -> None:
+        """StorageError from backend produces friendly error."""
+        mock_get.side_effect = StorageError("S3 timeout")
+
+        result = runner.invoke(session_app, ["--storage-backend", "s3", "show", "mysite"])
+
+        assert result.exit_code == 1
+        output = strip_ansi(result.output)
+        assert "Storage backend error" in output
+        assert "S3 timeout" in output
+
+
+class TestClearErrorHandling:
+    """Tests for error handling in session clear command."""
+
+    @patch("graftpunk.cli.session_commands.list_sessions_with_metadata")
+    def test_clear_value_error_shows_friendly_message(self, mock_list) -> None:
+        """ValueError from backend produces friendly error."""
+        mock_list.side_effect = ValueError("Missing GRAFTPUNK_S3_BUCKET")
+
+        result = runner.invoke(session_app, ["--storage-backend", "s3", "clear", "--all"])
+
+        assert result.exit_code == 1
+        output = strip_ansi(result.output)
+        assert "Storage backend error" in output
+
+    @patch("graftpunk.cli.session_commands.list_sessions_with_metadata")
+    def test_clear_storage_error_shows_friendly_message(self, mock_list) -> None:
+        """StorageError from backend produces friendly error."""
+        mock_list.side_effect = StorageError("S3 connection refused")
+
+        result = runner.invoke(session_app, ["--storage-backend", "s3", "clear", "--all"])
+
+        assert result.exit_code == 1
+        output = strip_ansi(result.output)
+        assert "Storage backend error" in output
+        assert "S3 connection refused" in output

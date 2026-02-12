@@ -10,6 +10,7 @@ import pytest
 
 from graftpunk.cache import (
     SessionLike,
+    _create_backend,
     _extract_session_metadata,
     _get_session_storage_backend,
     _reset_session_storage_backend,
@@ -795,6 +796,20 @@ class TestBackendOverride:
 
         # The original singleton must still be the same object
         assert _get_session_storage_backend() is cached_backend
+
+
+class TestCreateBackendValidation:
+    """Tests for _create_backend type validation."""
+
+    def test_unknown_backend_type_raises_value_error(self):
+        """Unknown backend type raises ValueError with descriptive message."""
+        with pytest.raises(ValueError, match="Unsupported storage backend: 'redis'"):
+            _create_backend("redis")
+
+    def test_empty_backend_type_raises_value_error(self):
+        """Empty string backend type raises ValueError."""
+        with pytest.raises(ValueError, match="Unsupported storage backend"):
+            _create_backend("")
 
 
 class TestListSessionsStorageFields:
